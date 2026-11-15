@@ -5,6 +5,7 @@ import 'package:intl/intl.dart' as intl;
 import '../components/app_logo.dart';
 import '../components/order_card.dart';
 import '../components/refreshable_empty_view.dart';
+import '../components/searchable_picker.dart';
 import '../core/app_events.dart';
 import '../core/app_notification.dart';
 import '../core/app_theme.dart';
@@ -92,6 +93,7 @@ class _WaitingOrdersScreenState extends State<WaitingOrdersScreen> {
   Future<void> _openEditOrderModal(Map<String, dynamic> order) async {
     final db = await DBHelper.instance.database;
     final categories = await db.query('categories', orderBy: 'id DESC');
+    final customers = await db.query('customers', orderBy: 'name ASC');
     if (!mounted) return;
 
     final custNameCtrl = TextEditingController(text: order['customer_name']);
@@ -236,31 +238,70 @@ class _WaitingOrdersScreenState extends State<WaitingOrdersScreen> {
                 const SizedBox(height: 14),
                 TextField(
                   controller: custNameCtrl,
-                  decoration: const InputDecoration(
-                      labelText: 'اسم الزبون / العميل *',
-                      prefixIcon: Icon(Icons.person)),
+                  decoration: InputDecoration(
+                    labelText: 'اسم الزبون / العميل *',
+                    prefixIcon: const Icon(Icons.person, color: AppTheme.primaryNavy),
+                    suffixIcon: customers.isNotEmpty
+                        ? IconButton(
+                            tooltip: 'بحث واختيار من العملاء المسجلين',
+                            icon: const Icon(Icons.person_search_rounded, color: AppTheme.primaryNavy),
+                            onPressed: () {
+                              showModalBottomSheet(
+                                context: context,
+                                isScrollControlled: true,
+                                useSafeArea: true,
+                                backgroundColor: Colors.transparent,
+                                builder: (modalCtx) {
+                                  return SearchableSelectFormField<String>(
+                                    value: custNameCtrl.text.trim(),
+                                    labelText: 'اختيار من العملاء المسجلين',
+                                    hintText: 'ابحث بالاسم للتصفية السريعة',
+                                    searchHint: 'اكتب اسم العميل أو الهاتف...',
+                                    items: customers.map((c) {
+                                      final p = (c['phone'] ?? '').toString();
+                                      return SearchableSelectItem<String>(
+                                        value: (c['name'] ?? '').toString(),
+                                        label: (c['name'] ?? '').toString(),
+                                        subtitle: p.isNotEmpty ? 'هاتف: $p' : null,
+                                        searchKey: '${c['name']} $p',
+                                      );
+                                    }).toList(),
+                                    onChanged: (chosenName) {
+                                      if (chosenName != null) {
+                                        setModalState(() => custNameCtrl.text = chosenName);
+                                      }
+                                    },
+                                  );
+                                },
+                              );
+                            },
+                          )
+                        : null,
+                  ),
                 ),
                 const SizedBox(height: 12),
                 if (categories.isNotEmpty) ...[
-                  DropdownButtonFormField<int>(
-                    initialValue: existingCatPresent
+                  SearchableSelectFormField<int>(
+                    value: existingCatPresent
                         ? selectedCategoryId
                         : (selectedCategoryId > 0 ? selectedCategoryId : null),
-                    decoration: const InputDecoration(
-                      labelText: 'الصنف / الموديل *',
-                      prefixIcon: Icon(Icons.weekend_rounded),
-                    ),
-                    isExpanded: true,
+                    labelText: 'الصنف / الموديل *',
+                    hintText: 'ابحث عن الصنف لتحديده',
+                    prefixIcon: const Icon(Icons.weekend_rounded, color: AppTheme.primaryNavy),
+                    searchHint: 'اكتب اسم الصنف للبحث والتصفية...',
                     items: [
                       if (!existingCatPresent && selectedCategoryId > 0)
-                        DropdownMenuItem<int>(
+                        SearchableSelectItem<int>(
                           value: selectedCategoryId,
-                          child: Text('$selectedCategoryName (محذوف من الأصناف)'),
+                          label: '$selectedCategoryName (محذوف من الأصناف)',
                         ),
                       ...categories.map((cat) {
-                        return DropdownMenuItem<int>(
+                        return SearchableSelectItem<int>(
                           value: cat['id'] as int,
-                          child: Text(CategoryStockHelper.formatDropdownItem(cat)),
+                          label: (cat['name'] ?? '').toString(),
+                          subtitle: 'رصيد المعرض: ${CategoryStockHelper.formatStockSummary(cat)}',
+                          badge: CategoryStockHelper.formatStockSummary(cat),
+                          searchKey: (cat['name'] ?? '').toString(),
                         );
                       }),
                     ],
@@ -619,20 +660,20 @@ class _WaitingOrdersScreenState extends State<WaitingOrdersScreen> {
                               : Column(
                                   crossAxisAlignment: CrossAxisAlignment.stretch,
                                   children: [
-                                    DropdownButtonFormField<int>(
+                                    SearchableSelectFormField<int>(
                                       key: ValueKey('sec_cat_${secondaryCategoryId ?? 'none'}'),
-                                      initialValue: secondaryCategoryId,
-                                      decoration: const InputDecoration(
-                                        labelText: 'اختر الطقم الآخر *',
-                                        prefixIcon: Icon(Icons.weekend_outlined),
-                                        filled: true,
-                                        fillColor: Colors.white,
-                                      ),
-                                      isExpanded: true,
+                                      value: secondaryCategoryId,
+                                      labelText: 'اختر الطقم الآخر *',
+                                      hintText: 'ابحث عن الطقم الآخر لاختيار قطع منه',
+                                      searchHint: 'اكتب اسم الطقم للتصفية...',
+                                      prefixIcon: const Icon(Icons.weekend_outlined, color: AppTheme.primaryNavy),
                                       items: otherCategories.map((c) {
-                                        return DropdownMenuItem<int>(
+                                        return SearchableSelectItem<int>(
                                           value: c['id'] as int,
-                                          child: Text(CategoryStockHelper.formatDropdownItem(c, prefix: 'رصيد')),
+                                          label: (c['name'] ?? '').toString(),
+                                          subtitle: 'رصيد المعرض: ${CategoryStockHelper.formatStockSummary(c)}',
+                                          badge: CategoryStockHelper.formatStockSummary(c),
+                                          searchKey: (c['name'] ?? '').toString(),
                                         );
                                       }).toList(),
                                       onChanged: (val) {

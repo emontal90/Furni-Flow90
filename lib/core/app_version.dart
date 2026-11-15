@@ -1,7 +1,7 @@
 /// معلومات إصدار التطبيق الحالية (تُحدّث تلقائياً عند عمل Release جديد)
 class AppVersion {
-  static const String version = '1.0.27';
-  static const int buildNumber = 28;
+  static const String version = '1.0.28';
+  static const int buildNumber = 29;
 
   static String get displayVersion => 'v$version';
   static String get fullVersion => 'v$version ($buildNumber)';

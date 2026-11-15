@@ -5,6 +5,7 @@ import 'package:intl/intl.dart' as intl;
 import 'package:sqflite/sqflite.dart';
 import '../components/app_logo.dart';
 import '../components/refreshable_empty_view.dart';
+import '../components/searchable_picker.dart';
 import '../core/app_events.dart';
 import '../core/app_notification.dart';
 import '../core/app_theme.dart';
@@ -583,17 +584,20 @@ class _UpholstererScreenState extends State<UpholstererScreen> {
                   ],
                   const SizedBox(height: 14),
 
-                  // 2. اختيار الصنف من المخزن
-                  DropdownButtonFormField<int>(
+                  // 2. اختيار الصنف من المخزن مع إمكانية البحث السريع
+                  SearchableSelectFormField<int>(
                     value: selectedCatId,
-                    decoration: const InputDecoration(
-                      labelText: 'الصنف / الطقم المطلوب تسليمه *',
-                      prefixIcon: Icon(Icons.weekend),
-                    ),
+                    labelText: 'الصنف / الطقم المطلوب تسليمه *',
+                    hintText: 'ابحث عن الطقم بالاسم لتحديده',
+                    searchHint: 'اكتب اسم الصنف للبحث والتصفية السريعة...',
+                    prefixIcon: const Icon(Icons.weekend, color: AppTheme.primaryNavy),
                     items: _categories.map((c) {
-                      return DropdownMenuItem<int>(
+                      return SearchableSelectItem<int>(
                         value: c['id'] as int,
-                        child: Text(CategoryStockHelper.formatDropdownItem(c)),
+                        label: (c['name'] ?? '').toString(),
+                        subtitle: 'رصيد المعرض: ${CategoryStockHelper.formatStockSummary(c)}',
+                        badge: CategoryStockHelper.formatStockSummary(c),
+                        searchKey: (c['name'] ?? '').toString(),
                       );
                     }).toList(),
                     onChanged: (val) {
@@ -2370,12 +2374,47 @@ class _UpholstererScreenState extends State<UpholstererScreen> {
                       final int rem = sent - rec;
                       final bool isDone = rem <= 0;
 
-                      // حساب الأطقم الكاملة المتبقية والقطع الفردية المتبقية
+                      // 1. حساب الأطقم المسلّمة والقطع الفردية المسلّمة
+                      int completeSetsSent = 0;
+                      int individualExcessSent = 0;
+                      // 2. حساب الأطقم المستلمة والقطع الفردية المستلمة
+                      int completeSetsRec = 0;
+                      int individualExcessRec = 0;
+                      // 3. حساب الأطقم المتبقية والقطع الفردية المتبقية
                       int completeSetsRem = 0;
                       int individualExcessRem = 0;
                       final excessPiecesList = <Map<String, dynamic>>[];
 
                       if (pieces.isNotEmpty) {
+                        // المسلّم
+                        completeSetsSent = pieces.map<int>((p) {
+                          final pSent = (p['sent_qty'] is int) ? p['sent_qty'] as int : (int.tryParse('${p['sent_qty']}') ?? 0);
+                          final pBase = (p['base_qty'] is int) ? p['base_qty'] as int : (int.tryParse('${p['base_qty']}') ?? 1);
+                          final safeBase = pBase > 0 ? pBase : 1;
+                          return pSent ~/ safeBase;
+                        }).reduce(math.min);
+                        for (final p in pieces) {
+                          final pSent = (p['sent_qty'] is int) ? p['sent_qty'] as int : (int.tryParse('${p['sent_qty']}') ?? 0);
+                          final pBase = (p['base_qty'] is int) ? p['base_qty'] as int : (int.tryParse('${p['base_qty']}') ?? 1);
+                          final safeBase = pBase > 0 ? pBase : 1;
+                          individualExcessSent += math.max(0, pSent - (completeSetsSent * safeBase));
+                        }
+
+                        // المستلم
+                        completeSetsRec = pieces.map<int>((p) {
+                          final pRec = (p['received_qty'] is int) ? p['received_qty'] as int : (int.tryParse('${p['received_qty']}') ?? 0);
+                          final pBase = (p['base_qty'] is int) ? p['base_qty'] as int : (int.tryParse('${p['base_qty']}') ?? 1);
+                          final safeBase = pBase > 0 ? pBase : 1;
+                          return pRec ~/ safeBase;
+                        }).reduce(math.min);
+                        for (final p in pieces) {
+                          final pRec = (p['received_qty'] is int) ? p['received_qty'] as int : (int.tryParse('${p['received_qty']}') ?? 0);
+                          final pBase = (p['base_qty'] is int) ? p['base_qty'] as int : (int.tryParse('${p['base_qty']}') ?? 1);
+                          final safeBase = pBase > 0 ? pBase : 1;
+                          individualExcessRec += math.max(0, pRec - (completeSetsRec * safeBase));
+                        }
+
+                        // المتبقي
                         completeSetsRem = pieces.map<int>((p) {
                           final pSent = (p['sent_qty'] is int) ? p['sent_qty'] as int : (int.tryParse('${p['sent_qty']}') ?? 0);
                           final pRec = (p['received_qty'] is int) ? p['received_qty'] as int : (int.tryParse('${p['received_qty']}') ?? 0);
@@ -2402,9 +2441,26 @@ class _UpholstererScreenState extends State<UpholstererScreen> {
                           }
                         }
                       } else {
-                        completeSetsRem = (b['sets_sent'] as int? ?? 1) - (b['sets_received'] as int? ?? 0);
-                        if (completeSetsRem < 0) completeSetsRem = 0;
+                        completeSetsSent = (b['sets_sent'] as int?) ?? 1;
+                        completeSetsRec = (b['sets_received'] as int?) ?? 0;
+                        completeSetsRem = math.max(0, completeSetsSent - completeSetsRec);
                       }
+
+                      String formatCount(int sets, int individual) {
+                        if (sets > 0 && individual > 0) {
+                          return '$sets طقم و $individual فردي';
+                        } else if (sets > 0) {
+                          return '$sets طقم';
+                        } else if (individual > 0) {
+                          return '$individual فردي';
+                        } else {
+                          return '0 طقم';
+                        }
+                      }
+
+                      final sentSummary = formatCount(completeSetsSent, individualExcessSent);
+                      final recSummary = formatCount(completeSetsRec, individualExcessRec);
+                      final remSummary = isDone ? 'مكتمل الاستلام' : formatCount(completeSetsRem, individualExcessRem);
 
                       return Card(
                         elevation: isExpanded ? 3 : 1.5,
@@ -2650,13 +2706,111 @@ class _UpholstererScreenState extends State<UpholstererScreen> {
                                   ),
                                   const SizedBox(height: 10),
 
-                                  // 2. بطاقة ملخص القطع الأنيقة والذكية بدون ازدحام (بطاقات مضغوطة أفقية لكل قطعة)
+                                  // 2. بطاقة الملخص الإجمالي: المسلّم، المستلم، المتبقي (أطقم + فردي)
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFF8FAFC),
+                                      borderRadius: BorderRadius.circular(12),
+                                      border: Border.all(color: Colors.grey.shade300),
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        // ما تم تسليمه للمنجد
+                                        Expanded(
+                                          child: Column(
+                                            children: [
+                                              const Row(
+                                                mainAxisAlignment: MainAxisAlignment.center,
+                                                children: [
+                                                  Icon(Icons.outbox_rounded, size: 14, color: Color(0xFF1E3A8A)),
+                                                  SizedBox(width: 4),
+                                                  Text('المسلّم للمنجد', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF1E3A8A))),
+                                                ],
+                                              ),
+                                              const SizedBox(height: 3),
+                                              Text(
+                                                sentSummary,
+                                                textAlign: TextAlign.center,
+                                                style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: AppTheme.primaryNavy),
+                                              ),
+                                              Text('($sent قطعة)', style: TextStyle(fontSize: 10, color: Colors.grey.shade600)),
+                                            ],
+                                          ),
+                                        ),
+                                        Container(width: 1, height: 42, color: Colors.grey.shade300),
+                                        // ما تم استلامه من المنجد
+                                        Expanded(
+                                          child: Column(
+                                            children: [
+                                              const Row(
+                                                mainAxisAlignment: MainAxisAlignment.center,
+                                                children: [
+                                                  Icon(Icons.move_to_inbox_rounded, size: 14, color: Color(0xFF047857)),
+                                                  SizedBox(width: 4),
+                                                  Text('المستلَم منه', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF047857))),
+                                                ],
+                                              ),
+                                              const SizedBox(height: 3),
+                                              Text(
+                                                recSummary,
+                                                textAlign: TextAlign.center,
+                                                style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: Color(0xFF047857)),
+                                              ),
+                                              Text('($rec قطعة)', style: TextStyle(fontSize: 10, color: Colors.grey.shade600)),
+                                            ],
+                                          ),
+                                        ),
+                                        Container(width: 1, height: 42, color: Colors.grey.shade300),
+                                        // المتبقي لدى المنجد
+                                        Expanded(
+                                          child: Column(
+                                            children: [
+                                              Row(
+                                                mainAxisAlignment: MainAxisAlignment.center,
+                                                children: [
+                                                  Icon(
+                                                    isDone ? Icons.check_circle_rounded : Icons.pending_actions_rounded,
+                                                    size: 14,
+                                                    color: isDone ? Colors.green.shade700 : const Color(0xFFB45309),
+                                                  ),
+                                                  const SizedBox(width: 4),
+                                                  Text(
+                                                    'المتبقي لديه',
+                                                    style: TextStyle(
+                                                      fontSize: 11,
+                                                      fontWeight: FontWeight.bold,
+                                                      color: isDone ? Colors.green.shade700 : const Color(0xFFB45309),
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                              const SizedBox(height: 3),
+                                              Text(
+                                                remSummary,
+                                                textAlign: TextAlign.center,
+                                                style: TextStyle(
+                                                  fontSize: 12.5,
+                                                  fontWeight: FontWeight.bold,
+                                                  color: isDone ? Colors.green.shade800 : const Color(0xFFB45309),
+                                                ),
+                                              ),
+                                              Text(isDone ? '(مكتمل)' : '($rem قطعة)', style: TextStyle(fontSize: 10, color: Colors.grey.shade600)),
+                                            ],
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  const SizedBox(height: 10),
+
+                                  // 3. بطاقة حالة القطع التفصيلية
                                   Row(
                                     children: [
                                       const Icon(Icons.chair_rounded, size: 16, color: AppTheme.primaryNavy),
                                       const SizedBox(width: 6),
                                       const Text(
-                                        'حالة قطع الطقم لدى المنجد:',
+                                        'تفاصيل القطع لدى المنجد:',
                                         style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: AppTheme.primaryNavy),
                                       ),
                                       const Spacer(),
@@ -2670,7 +2824,7 @@ class _UpholstererScreenState extends State<UpholstererScreen> {
                                           ),
                                         ),
                                         child: Text(
-                                          isDone ? 'مكتمل الاستلام' : 'المتبقي: $rem قطعة',
+                                          isDone ? 'مكتمل الاستلام' : 'المتبقي: $remSummary ($rem قطعة)',
                                           style: TextStyle(
                                             fontSize: 11,
                                             fontWeight: FontWeight.bold,

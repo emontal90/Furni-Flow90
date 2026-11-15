@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart' as intl;
 import '../components/app_logo.dart';
+import '../components/searchable_picker.dart';
 import '../core/app_events.dart';
 import '../core/app_notification.dart';
 import '../core/app_theme.dart';
@@ -420,22 +421,23 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
         child: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          // 1. اختيار العميل
-          DropdownButtonFormField<int>(
-            initialValue: _selectedCustomerId,
-            decoration: const InputDecoration(
-              labelText: 'اسم الزبون / العميل *',
-              hintText: 'اختر العميل من القائمة',
-              prefixIcon: Icon(Icons.person),
-            ),
+          // 1. اختيار العميل مع إمكانية البحث السريع
+          SearchableSelectFormField<int>(
+            key: ValueKey('cust_${_selectedCustomerId ?? 'none'}'),
+            value: _selectedCustomerId,
+            labelText: 'اسم الزبون / العميل *',
+            hintText: 'ابحث بالاسم أو رقم الهاتف لاختيار العميل',
+            searchHint: 'اكتب اسم العميل أو الهاتف للتصفية السريعة...',
+            prefixIcon: const Icon(Icons.person, color: AppTheme.primaryNavy),
             items: _customers.map((c) {
-              final phone =
-                  (c['phone'] != null && c['phone'].toString().isNotEmpty)
-                      ? ' (${c['phone']})'
-                      : '';
-              return DropdownMenuItem<int>(
+              final phone = (c['phone'] != null && c['phone'].toString().trim().isNotEmpty)
+                  ? c['phone'].toString().trim()
+                  : '';
+              return SearchableSelectItem<int>(
                 value: c['id'] as int,
-                child: Text('${c['name']}$phone'),
+                label: (c['name'] ?? '').toString(),
+                subtitle: phone.isNotEmpty ? 'هاتف: $phone' : null,
+                searchKey: '${c['name']} $phone',
               );
             }).toList(),
             onChanged: (v) => setState(() => _selectedCustomerId = v),
@@ -450,19 +452,21 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
             ),
           const SizedBox(height: 16),
 
-          // 2. اختيار الصنف / الطقم
-          DropdownButtonFormField<int>(
+          // 2. اختيار الصنف / الطقم مع إمكانية البحث السريع
+          SearchableSelectFormField<int>(
             key: ValueKey('primary_cat_${_selectedCategoryId ?? 'none'}'),
-            initialValue: _selectedCategoryId,
-            decoration: const InputDecoration(
-              labelText: 'اسم الطقم (الصنف) *',
-              hintText: 'اختر الصنف لعرض قطعه',
-              prefixIcon: Icon(Icons.weekend),
-            ),
+            value: _selectedCategoryId,
+            labelText: 'اسم الطقم (الصنف) *',
+            hintText: 'ابحث بالاسم لاختيار الصنف وعرض قطعه',
+            searchHint: 'اكتب اسم الصنف للبحث السريع...',
+            prefixIcon: const Icon(Icons.weekend, color: AppTheme.primaryNavy),
             items: _categories.map((c) {
-              return DropdownMenuItem<int>(
+              return SearchableSelectItem<int>(
                 value: c['id'] as int,
-                child: Text(CategoryStockHelper.formatDropdownItem(c)),
+                label: (c['name'] ?? '').toString(),
+                subtitle: 'رصيد المعرض: ${CategoryStockHelper.formatStockSummary(c)}',
+                badge: CategoryStockHelper.formatStockSummary(c),
+                searchKey: (c['name'] ?? '').toString(),
               );
             }).toList(),
             onChanged: (v) {
@@ -487,30 +491,8 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
             ),
           const SizedBox(height: 16),
 
-          // 3. عرض قطع الطقم للاختيار منها وتحديد كمياتها
-          if (_selectedCategory == null)
-            Card(
-              color: Colors.amber.shade50,
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  side: BorderSide(color: Colors.amber.shade200)),
-              child: const Padding(
-                padding: EdgeInsets.all(16.0),
-                child: Row(
-                  children: [
-                    Icon(Icons.info_outline, color: Colors.amber),
-                    SizedBox(width: 12),
-                    Expanded(
-                      child: Text(
-                        'يرجى اختيار اسم الطقم (الصنف) في الأعلى، وستظهر لك هنا كافة القطع المتوفرة للطقم لتحديد المطلوب منها وعددها بدقة.',
-                        style: TextStyle(color: Colors.black87, fontSize: 14),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            )
-          else
+          // 3. عرض قطع الطقم للاختيار منها وتحديد كمياتها (تم حذف بطاقة الملاحظة بناءً على الطلب)
+          if (_selectedCategory != null)
             Card(
               elevation: 2,
               shape: RoundedRectangleBorder(
@@ -1008,20 +990,20 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
                                   : Column(
                                       crossAxisAlignment: CrossAxisAlignment.stretch,
                                       children: [
-                                        DropdownButtonFormField<int>(
+                                        SearchableSelectFormField<int>(
                                           key: ValueKey('sec_cat_${_secondaryCategoryId ?? 'none'}'),
-                                          initialValue: _secondaryCategoryId,
-                                          decoration: const InputDecoration(
-                                            labelText: 'اختر الطقم الآخر *',
-                                            prefixIcon: Icon(Icons.weekend_outlined),
-                                            filled: true,
-                                            fillColor: Colors.white,
-                                          ),
-                                          isExpanded: true,
+                                          value: _secondaryCategoryId,
+                                          labelText: 'اختر الطقم الآخر *',
+                                          hintText: 'ابحث عن الطقم الآخر لاختيار قطع منه',
+                                          searchHint: 'اكتب اسم الطقم للتصفية...',
+                                          prefixIcon: const Icon(Icons.weekend_outlined, color: AppTheme.primaryNavy),
                                           items: _otherCategories.map((c) {
-                                            return DropdownMenuItem<int>(
+                                            return SearchableSelectItem<int>(
                                               value: c['id'] as int,
-                                              child: Text(CategoryStockHelper.formatDropdownItem(c, prefix: 'رصيد')),
+                                              label: (c['name'] ?? '').toString(),
+                                              subtitle: 'رصيد المعرض: ${CategoryStockHelper.formatStockSummary(c)}',
+                                              badge: CategoryStockHelper.formatStockSummary(c),
+                                              searchKey: (c['name'] ?? '').toString(),
                                             );
                                           }).toList(),
                                           onChanged: (val) => setState(() => _secondaryCategoryId = val),
