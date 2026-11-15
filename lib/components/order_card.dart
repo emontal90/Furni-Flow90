@@ -406,6 +406,22 @@ class OrderCard extends StatelessWidget {
               ),
             ],
 
+            // أزرار العمليات للطلبات المسلّمة (زر الحذف بسلة المهملات الصغير كما في تسليم المنجد)
+            if (isDelivered && onDeletePressed != null) ...[
+              const SizedBox(height: 10),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  IconButton(
+                    tooltip: 'حذف هذا الطلب المسلّم',
+                    icon: const Icon(Icons.delete_outline, color: Colors.red),
+                    onPressed: onDeletePressed,
+                  ),
+                  const SizedBox.shrink(),
+                ],
+              ),
+            ],
+
             // أزرار العمليات (إلغاء الطلب / تعديل الطلب / تسليم الطلب)
             if (!isDelivered && (onDeletePressed != null || onEditPressed != null || onDeliverPressed != null)) ...[
               const SizedBox(height: 10),

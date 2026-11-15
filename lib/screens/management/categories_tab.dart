@@ -4,6 +4,7 @@ import '../../components/refreshable_empty_view.dart';
 import '../../core/app_events.dart';
 import '../../core/app_notification.dart';
 import '../../core/app_theme.dart';
+import '../../core/category_stock_helper.dart';
 import '../../core/db_helper.dart';
 
 class CategoriesTab extends StatefulWidget {
@@ -46,6 +47,7 @@ class _CategoriesTabState extends State<CategoriesTab> {
 
   Future<void> _load() async {
     final db = await DBHelper.instance.database;
+    await CategoryStockHelper.syncDatabaseStock(db);
     final data = await db.query('categories', orderBy: 'id DESC');
     if (mounted) setState(() => _categories = data);
   }
@@ -864,7 +866,7 @@ class _CategoriesTabState extends State<CategoriesTab> {
                                             border: Border.all(color: Colors.amber.shade300),
                                           ),
                                           child: Text(
-                                            'المخزن: ${cat['stock_qty']} طقم',
+                                            'المخزن: ${CategoryStockHelper.formatStockSummary(cat)}',
                                             style: TextStyle(
                                               fontSize: 10.5,
                                               color: Colors.amber.shade900,

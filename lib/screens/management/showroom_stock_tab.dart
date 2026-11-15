@@ -1,10 +1,12 @@
 import 'dart:math' as math;
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart' as intl;
 import '../../components/refreshable_empty_view.dart';
 import '../../core/app_events.dart';
 import '../../core/app_notification.dart';
 import '../../core/app_theme.dart';
+import '../../core/category_stock_helper.dart';
 import '../../core/db_helper.dart';
 import '../../core/stock_movement_helper.dart';
 
@@ -31,6 +33,11 @@ class _ShowroomStockTabState extends State<ShowroomStockTab> {
   List<Map<String, dynamic>> _categories = [];
   final Set<int> _expandedCategoryIds = {};
 
+  // فلتر تاريخ استعادة وضع المخزن في نهاية يوم محدد
+  DateTime? _selectedHistoryDate;
+  bool _isLoadingHistory = false;
+  List<Map<String, dynamic>>? _historicalCategories;
+
   @override
   void initState() {
     super.initState();
@@ -46,8 +53,64 @@ class _ShowroomStockTabState extends State<ShowroomStockTab> {
 
   Future<void> _load() async {
     final db = await DBHelper.instance.database;
+    await CategoryStockHelper.syncDatabaseStock(db);
     final data = await db.query('categories', orderBy: 'id DESC');
-    if (mounted) setState(() => _categories = data);
+    if (mounted) {
+      setState(() => _categories = data);
+      if (_selectedHistoryDate != null) {
+        _applyDateFilter(_selectedHistoryDate!);
+      }
+    }
+  }
+
+  Future<void> _applyDateFilter(DateTime dt) async {
+    setState(() => _isLoadingHistory = true);
+    final hist = await StockMovementHelper.getStockAtEndOfDate(
+      currentCategories: _categories,
+      targetDate: dt,
+    );
+    if (mounted) {
+      setState(() {
+        _selectedHistoryDate = dt;
+        _historicalCategories = hist;
+        _isLoadingHistory = false;
+      });
+    }
+  }
+
+  void _clearDateFilter() {
+    setState(() {
+      _selectedHistoryDate = null;
+      _historicalCategories = null;
+    });
+  }
+
+  Future<void> _pickHistoryDate() async {
+    final now = DateTime.now();
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _selectedHistoryDate ?? now,
+      firstDate: DateTime(2020),
+      lastDate: now,
+      helpText: 'اختر التاريخ لاستعراض وضع المخزن في نهايته',
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: const ColorScheme.light(
+              primary: AppTheme.primaryNavy,
+              onPrimary: AppTheme.royalGold,
+              surface: Colors.white,
+              onSurface: AppTheme.primaryNavy,
+            ),
+          ),
+          child: child!,
+        );
+      },
+    );
+
+    if (picked != null) {
+      await _applyDateFilter(picked);
+    }
   }
 
   // نافذة تأكيد حذف صنف بالكامل
@@ -892,25 +955,148 @@ class _ShowroomStockTabState extends State<ShowroomStockTab> {
   // ---------------------------------------------------------------------------
   @override
   Widget build(BuildContext context) {
-    return RefreshIndicator(
-      onRefresh: _load,
-      child: _categories.isEmpty
-          ? const RefreshableEmptyView(
-              child: Padding(
-                padding: EdgeInsets.all(24.0),
-                child: Text(
-                  'لا توجد أصناف في المخزن حالياً.\nيمكنك إضافة الأصناف من تبويب (الأصناف ومكوناتها).',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(color: Colors.grey, fontSize: 16),
+    final effectiveCategories = _historicalCategories ?? _categories;
+    final bool isHistoricalMode = _selectedHistoryDate != null;
+    final dateFormatted = isHistoricalMode
+        ? intl.DateFormat('yyyy-MM-dd').format(_selectedHistoryDate!)
+        : '';
+
+    return Column(
+      children: [
+        // شريط فلتر التاريخ لاستعراض وضع المخزن في نهاية يوم محدد
+        Container(
+          margin: const EdgeInsets.fromLTRB(12, 10, 12, 4),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: BoxDecoration(
+            color: isHistoricalMode ? const Color(0xFFFFFBEB) : Colors.white,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: isHistoricalMode ? const Color(0xFFD97706) : Colors.grey.shade300,
+              width: isHistoricalMode ? 1.5 : 1.0,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.03),
+                blurRadius: 4,
+                offset: const Offset(0, 1),
+              ),
+            ],
+          ),
+          child: Row(
+            children: [
+              Icon(
+                isHistoricalMode ? Icons.history_toggle_off_rounded : Icons.calendar_month_rounded,
+                color: isHistoricalMode ? const Color(0xFFD97706) : AppTheme.primaryNavy,
+                size: 20,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: InkWell(
+                  onTap: _pickHistoryDate,
+                  borderRadius: BorderRadius.circular(8),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        isHistoricalMode ? 'وضع المخزن كما كان بنهاية تاريخ:' : 'استعادة وضع المخزن بتاريخ سابق:',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: isHistoricalMode ? const Color(0xFFB45309) : Colors.grey.shade700,
+                        ),
+                      ),
+                      const SizedBox(height: 1),
+                      Text(
+                        isHistoricalMode ? dateFormatted : 'اضغط لاختيار تاريخ سابق',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.bold,
+                          color: isHistoricalMode ? const Color(0xFFB45309) : AppTheme.primaryNavy,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
-            )
-          : ListView.builder(
-              physics: const AlwaysScrollableScrollPhysics(),
-              padding: const EdgeInsets.only(left: 12, right: 12, top: 12, bottom: 80),
-            itemCount: _categories.length,
-            itemBuilder: (ctx, i) {
-              final cat = _categories[i];
+              if (_isLoadingHistory)
+                const SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFFD97706)),
+                )
+              else if (isHistoricalMode)
+                TextButton.icon(
+                  style: TextButton.styleFrom(
+                    foregroundColor: Colors.red.shade700,
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    visualDensity: VisualDensity.compact,
+                  ),
+                  onPressed: _clearDateFilter,
+                  icon: const Icon(Icons.close_rounded, size: 16),
+                  label: const Text('إلغاء الفلتر', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11.5)),
+                )
+              else
+                OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppTheme.primaryNavy,
+                    side: BorderSide(color: AppTheme.primaryNavy.withValues(alpha: 0.4)),
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    visualDensity: VisualDensity.compact,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  ),
+                  onPressed: _pickHistoryDate,
+                  icon: const Icon(Icons.date_range_rounded, size: 16),
+                  label: const Text('تحديد تاريخ', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11.5)),
+                ),
+            ],
+          ),
+        ),
+
+        if (isHistoricalMode)
+          Container(
+            margin: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFEF3C7),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: const Color(0xFFFDE68A)),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.info_outline_rounded, size: 14, color: Color(0xFF92400E)),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    'أرقام المخزون المعروضة حالياً تعكس الوضع في نهاية $dateFormatted بناءً على سجل الحركات.',
+                    style: const TextStyle(fontSize: 11, color: Color(0xFF92400E), fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+        // قائمة الأصناف
+        Expanded(
+          child: RefreshIndicator(
+            onRefresh: _load,
+            child: effectiveCategories.isEmpty
+                ? const RefreshableEmptyView(
+                    child: Padding(
+                      padding: EdgeInsets.all(24.0),
+                      child: Text(
+                        'لا توجد أصناف في المخزن حالياً.\nيمكنك إضافة الأصناف من تبويب (الأصناف ومكوناتها).',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(color: Colors.grey, fontSize: 16),
+                      ),
+                    ),
+                  )
+                : ListView.builder(
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    padding: const EdgeInsets.only(left: 12, right: 12, top: 8, bottom: 80),
+                    itemCount: effectiveCategories.length,
+                    itemBuilder: (ctx, i) {
+                      final cat = effectiveCategories[i];
               List comps = [];
               try {
                 comps = jsonDecode(cat['components_json']);
@@ -1281,6 +1467,9 @@ class _ShowroomStockTabState extends State<ShowroomStockTab> {
               );
             },
           ),
-    );
-  }
+        ),
+      ),
+    ],
+  );
+}
 }

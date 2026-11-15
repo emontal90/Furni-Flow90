@@ -5,6 +5,7 @@ import '../components/app_logo.dart';
 import '../core/app_events.dart';
 import '../core/app_notification.dart';
 import '../core/app_theme.dart';
+import '../core/category_stock_helper.dart';
 import '../core/db_helper.dart';
 import '../core/order_delivery_helper.dart';
 
@@ -65,6 +66,7 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
 
   Future<void> _loadInitialData() async {
     final db = await DBHelper.instance.database;
+    await CategoryStockHelper.syncDatabaseStock(db);
     final custs = await db.query('customers', orderBy: 'id DESC');
     final cats = await db.query('categories', orderBy: 'id DESC');
     setState(() {
@@ -460,7 +462,7 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
             items: _categories.map((c) {
               return DropdownMenuItem<int>(
                 value: c['id'] as int,
-                child: Text('${c['name']} (رصيد المعرض: ${c['stock_qty']})'),
+                child: Text(CategoryStockHelper.formatDropdownItem(c)),
               );
             }).toList(),
             onChanged: (v) {
@@ -529,7 +531,7 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
                                 style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: AppTheme.primaryNavy),
                               ),
                               Text(
-                                'رصيد المعرض الحالي: ${_selectedCategory!['stock_qty']} طقم',
+                                'رصيد المعرض الحالي: ${CategoryStockHelper.formatStockSummary(_selectedCategory!)}',
                                 style: const TextStyle(color: Colors.black54, fontSize: 12),
                               ),
                             ],
@@ -1019,7 +1021,7 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
                                           items: _otherCategories.map((c) {
                                             return DropdownMenuItem<int>(
                                               value: c['id'] as int,
-                                              child: Text('${c['name']} (رصيد: ${c['stock_qty']})'),
+                                              child: Text(CategoryStockHelper.formatDropdownItem(c, prefix: 'رصيد')),
                                             );
                                           }).toList(),
                                           onChanged: (val) => setState(() => _secondaryCategoryId = val),

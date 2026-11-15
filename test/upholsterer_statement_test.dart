@@ -326,6 +326,29 @@ void main() {
       expect(find.text('1 طقم و 1 فردي'), findsWidgets);
       expect(find.text('مشاركة كشف الحساب على واتساب (صورة)'), findsOneWidget);
     });
+
+    test('formatCompactLine formats single-line string matching notebook ledger style', () {
+      final line1 = UpholstererStatementHelper.formatCompactLine(
+        categoryName: 'كابوتكا',
+        sets: 7,
+        excessPieces: {'كنبة كبيرة': 3, 'كنبة صغيرة': 4},
+      );
+      expect(line1, '7 طقم كابوتكا + 3 كنبة كبيرة + 4 كنبة صغيرة');
+
+      final line2 = UpholstererStatementHelper.formatCompactLine(
+        categoryName: 'أوريو',
+        sets: 8,
+        excessPieces: {},
+      );
+      expect(line2, '8 طقم أوريو');
+
+      final line3 = UpholstererStatementHelper.formatCompactLine(
+        categoryName: 'فوتيك',
+        sets: 0,
+        excessPieces: {'فوتيه': 5},
+      );
+      expect(line3, '5 فوتيه فوتيك');
+    });
   });
 }
 

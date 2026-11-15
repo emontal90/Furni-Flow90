@@ -5,6 +5,7 @@ import '../components/app_logo.dart';
 import '../components/order_card.dart';
 import '../components/refreshable_empty_view.dart';
 import '../core/app_events.dart';
+import '../core/app_notification.dart';
 import '../core/app_theme.dart';
 import '../core/db_helper.dart';
 
@@ -60,6 +61,53 @@ class _DeliveredOrdersScreenState extends State<DeliveredOrdersScreen> {
         _orders = data;
         _categoryCompsById = compsMap;
       });
+    }
+  }
+
+  Future<void> _confirmDeleteDeliveredOrder(Map<String, dynamic> order) async {
+    final custName = (order['customer_name'] ?? '').toString();
+    final catName = (order['category_name'] ?? '').toString();
+
+    final bool? confirm = await showDialog<bool>(
+      context: context,
+      builder: (dCtx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Row(
+          children: [
+            Icon(Icons.delete_forever, color: Colors.red, size: 28),
+            SizedBox(width: 8),
+            Text('تأكيد حذف الطلب المسلّم', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+          ],
+        ),
+        content: Text(
+          'هل أنت متأكد من حذف طلب العميل "$custName" لطقم "$catName" من قائمة تم التسليم نهائياً؟',
+          style: const TextStyle(fontSize: 15),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dCtx, false),
+            child: const Text('إلغاء', style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            ),
+            onPressed: () => Navigator.pop(dCtx, true),
+            child: const Text('تأكيد الحذف'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm == true) {
+      final db = await DBHelper.instance.database;
+      await db.delete('orders', where: 'id = ?', whereArgs: [order['id']]);
+      AppEvents.instance.notifyAll();
+      if (mounted) {
+        AppNotification.showSuccess(context, 'تم حذف الطلب المسلّم بنجاح');
+      }
     }
   }
 
@@ -427,6 +475,7 @@ class _DeliveredOrdersScreenState extends State<DeliveredOrdersScreen> {
                           isDelivered: true,
                           collapsible: true,
                           isExpanded: isExpanded,
+                          onDeletePressed: () => _confirmDeleteDeliveredOrder(order),
                           onToggleExpand: () {
                             setState(() {
                               if (isExpanded) {

@@ -8,6 +8,7 @@ import '../components/refreshable_empty_view.dart';
 import '../core/app_events.dart';
 import '../core/app_notification.dart';
 import '../core/app_theme.dart';
+import '../core/category_stock_helper.dart';
 import '../core/db_helper.dart';
 import '../core/stock_movement_helper.dart';
 import '../core/upholsterer_statement_helper.dart';
@@ -89,6 +90,7 @@ class _UpholstererScreenState extends State<UpholstererScreen> {
 
   Future<void> _load() async {
     final db = await DBHelper.instance.database;
+    await CategoryStockHelper.syncDatabaseStock(db);
     final b = await db.query('upholsterer_batches', orderBy: 'id DESC');
     final c = await db.query('categories', orderBy: 'name ASC');
     if (mounted) {
@@ -155,6 +157,167 @@ class _UpholstererScreenState extends State<UpholstererScreen> {
 
       return true;
     }).toList();
+  }
+
+  /// نافذة عرض تفاصيل القطع الفردية المتبقية لدى المنجد
+  void _showUpholstererIndividualPiecesDialog({
+    required BuildContext context,
+    required String setName,
+    required String upholstererName,
+    required int completeSets,
+    required int totalExcess,
+    required List<Map<String, dynamic>> excessPieces,
+  }) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: const Color(0xFFD97706).withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: const Icon(Icons.chair_rounded, color: Color(0xFFD97706), size: 24),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text(
+                    'تفاصيل الرصيد الفردي لدى المنجد',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppTheme.primaryNavy),
+                  ),
+                  Text(
+                    'طقم: $setName | المنجد: $upholstererName',
+                    style: const TextStyle(fontSize: 12, color: Colors.grey, fontWeight: FontWeight.normal),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        content: totalExcess == 0
+            ? const Padding(
+                padding: EdgeInsets.symmetric(vertical: 16),
+                child: Row(
+                  children: [
+                    Icon(Icons.check_circle, color: Colors.green, size: 22),
+                    SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'لا توجد قطع فردية متبقية. كافة القطع متكاملة ضمن الأطقم المسلّمة للمنجد.',
+                        style: TextStyle(fontSize: 14),
+                      ),
+                    ),
+                  ],
+                ),
+              )
+            : SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFD97706).withValues(alpha: 0.08),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: const Color(0xFFD97706).withValues(alpha: 0.2)),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text(
+                            'إجمالي القطع الفردية المتبقية:',
+                            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Color(0xFFB45309)),
+                          ),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFD97706),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Text(
+                              '$totalExcess قطعة',
+                              style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 13, color: Colors.white),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    const Text(
+                      'القطع الفردية المتبقية لدى المنجد:',
+                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.black87),
+                    ),
+                    const SizedBox(height: 6),
+                    ...excessPieces.map((p) {
+                      final rem = p['rem_qty'] ?? p['excess_qty'];
+                      return Container(
+                        margin: const EdgeInsets.symmetric(vertical: 4),
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: Colors.grey.shade300),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.02),
+                              blurRadius: 4,
+                              offset: const Offset(0, 1),
+                            ),
+                          ],
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Row(
+                              children: [
+                                const Icon(Icons.weekend_outlined, size: 20, color: AppTheme.primaryNavy),
+                                const SizedBox(width: 8),
+                                Text(
+                                  (p['name'] ?? '').toString(),
+                                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: AppTheme.primaryNavy),
+                                ),
+                              ],
+                            ),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFD97706),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Text(
+                                '$rem قطعة فردية',
+                                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12),
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    }),
+                  ],
+                ),
+              ),
+        actions: [
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppTheme.primaryNavy,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            ),
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('إغلاق'),
+          ),
+        ],
+      ),
+    );
   }
 
   /// نافذة تأكيد حذف دفعة
@@ -430,7 +593,7 @@ class _UpholstererScreenState extends State<UpholstererScreen> {
                     items: _categories.map((c) {
                       return DropdownMenuItem<int>(
                         value: c['id'] as int,
-                        child: Text('${c['name']} (رصيد المعرض: ${c['stock_qty']})'),
+                        child: Text(CategoryStockHelper.formatDropdownItem(c)),
                       );
                     }).toList(),
                     onChanged: (val) {
@@ -696,19 +859,99 @@ class _UpholstererScreenState extends State<UpholstererScreen> {
                       }
 
                       final db = await DBHelper.instance.database;
-                      final int batchId = await db.insert('upholsterer_batches', {
-                        'upholsterer_name': uphName,
-                        'category_id': selectedCat['id'],
-                        'category_name': selectedCat['name'],
-                        'piece_name': validPieces.first['name'],
-                        'total_sent': totalSent,
-                        'received_qty': 0,
-                        'sent_date': today,
-                        'received_date': null,
-                        'sets_sent': setsToDeliver,
-                        'sets_received': 0,
-                        'pieces_json': jsonEncode(validPieces),
-                      });
+
+                      // التحقق مما إذا كان هناك طلب/دفعة مسجلة لنفس المنجد لنفس الصنف قيد التنجيد (غير مكتملة) للدمج التلقائي
+                      final existingBatches = await db.query(
+                        'upholsterer_batches',
+                        where: 'LOWER(TRIM(upholsterer_name)) = LOWER(TRIM(?)) AND category_id = ?',
+                        whereArgs: [uphName, selectedCat['id']],
+                        orderBy: 'id DESC',
+                      );
+
+                      Map<String, dynamic>? targetBatch;
+                      for (final eb in existingBatches) {
+                        final int sent = (eb['total_sent'] is int)
+                            ? eb['total_sent'] as int
+                            : (int.tryParse('${eb['total_sent']}') ?? 0);
+                        final int rec = (eb['received_qty'] is int)
+                            ? eb['received_qty'] as int
+                            : (int.tryParse('${eb['received_qty']}') ?? 0);
+                        if (sent > rec) {
+                          targetBatch = eb;
+                          break;
+                        }
+                      }
+
+                      int batchId;
+                      bool isMerged = false;
+
+                      if (targetBatch != null) {
+                        // دمج تلقائي مع الطلب القائم لنفس المنجد ونفس الصنف
+                        isMerged = true;
+                        batchId = targetBatch['id'] as int;
+                        final existingPieces = _parseBatchPieces(targetBatch);
+
+                        for (final newP in validPieces) {
+                          final String newName = (newP['name'] ?? '').toString().trim();
+                          final int newSent = (newP['sent_qty'] as int?) ?? 0;
+                          final int newBase = (newP['base_qty'] as int?) ?? 1;
+
+                          bool pieceFound = false;
+                          for (final ep in existingPieces) {
+                            if ((ep['name'] ?? '').toString().trim() == newName) {
+                              final int oldSent = (ep['sent_qty'] as int?) ?? 0;
+                              ep['sent_qty'] = oldSent + newSent;
+                              ep['base_qty'] = newBase;
+                              ep['sent_date'] = today;
+                              pieceFound = true;
+                              break;
+                            }
+                          }
+
+                          if (!pieceFound) {
+                            existingPieces.add({
+                              'name': newName,
+                              'base_qty': newBase,
+                              'sent_qty': newSent,
+                              'received_qty': 0,
+                              'sent_date': today,
+                              'received_date': null,
+                            });
+                          }
+                        }
+
+                        final int oldTotalSent = (targetBatch['total_sent'] as int?) ?? 0;
+                        final int updatedTotalSent = oldTotalSent + totalSent;
+                        final int oldSetsSent = (targetBatch['sets_sent'] as int?) ?? 0;
+                        final int updatedSetsSent = oldSetsSent + setsToDeliver;
+
+                        await db.update(
+                          'upholsterer_batches',
+                          {
+                            'total_sent': updatedTotalSent,
+                            'sets_sent': updatedSetsSent,
+                            'pieces_json': jsonEncode(existingPieces),
+                            'sent_date': today,
+                          },
+                          where: 'id = ?',
+                          whereArgs: [batchId],
+                        );
+                      } else {
+                        // إنشاء دفعة جديدة
+                        batchId = await db.insert('upholsterer_batches', {
+                          'upholsterer_name': uphName,
+                          'category_id': selectedCat['id'],
+                          'category_name': selectedCat['name'],
+                          'piece_name': validPieces.first['name'],
+                          'total_sent': totalSent,
+                          'received_qty': 0,
+                          'sent_date': today,
+                          'received_date': null,
+                          'sets_sent': setsToDeliver,
+                          'sets_received': 0,
+                          'pieces_json': jsonEncode(validPieces),
+                        });
+                      }
 
                       try {
                         final txPieces = validPieces
@@ -746,7 +989,9 @@ class _UpholstererScreenState extends State<UpholstererScreen> {
                         Navigator.pop(ctx);
                         AppNotification.showSuccess(
                           context,
-                          'تم تسجيل تسليم طقم (${selectedCat['name']}) للمنجد بنجاح',
+                          isMerged
+                              ? 'تم دمج التسليم الجديد تلقائياً مع طلبات المنجد $uphName لطقم (${selectedCat['name']}) بنجاح'
+                              : 'تم تسجيل تسليم طقم (${selectedCat['name']}) للمنجد بنجاح',
                         );
                       }
                     },
@@ -1619,6 +1864,8 @@ class _UpholstererScreenState extends State<UpholstererScreen> {
         }
       }
 
+      newStock = CategoryStockHelper.calculateCompleteSets({'components_json': jsonEncode(catComps)});
+
       await db.update(
         'categories',
         {
@@ -1824,7 +2071,7 @@ class _UpholstererScreenState extends State<UpholstererScreen> {
         catComps.add({'name': pName.trim(), 'qty': qtyToReceive});
       }
 
-      int newCatStock = currentCatStock + newlyCompletedSets;
+      int newCatStock = CategoryStockHelper.calculateCompleteSets({'components_json': jsonEncode(catComps)});
 
       await db.update(
         'categories',
@@ -2122,15 +2369,48 @@ class _UpholstererScreenState extends State<UpholstererScreen> {
                       final int rec = b['received_qty'] is int ? b['received_qty'] : (int.tryParse('${b['received_qty']}') ?? 0);
                       final int rem = sent - rec;
                       final bool isDone = rem <= 0;
-                      final int bSetsSent = (b['sets_sent'] as int?) ?? 1;
-                      final int bSetsRec = (b['sets_received'] as int?) ?? 0;
-                      final int bSetsRem = bSetsSent - bSetsRec;
+
+                      // حساب الأطقم الكاملة المتبقية والقطع الفردية المتبقية
+                      int completeSetsRem = 0;
+                      int individualExcessRem = 0;
+                      final excessPiecesList = <Map<String, dynamic>>[];
+
+                      if (pieces.isNotEmpty) {
+                        completeSetsRem = pieces.map<int>((p) {
+                          final pSent = (p['sent_qty'] is int) ? p['sent_qty'] as int : (int.tryParse('${p['sent_qty']}') ?? 0);
+                          final pRec = (p['received_qty'] is int) ? p['received_qty'] as int : (int.tryParse('${p['received_qty']}') ?? 0);
+                          final pRem = math.max(0, pSent - pRec);
+                          final pBase = (p['base_qty'] is int) ? p['base_qty'] as int : (int.tryParse('${p['base_qty']}') ?? 1);
+                          final safeBase = pBase > 0 ? pBase : 1;
+                          return pRem ~/ safeBase;
+                        }).reduce(math.min);
+
+                        for (final p in pieces) {
+                          final pSent = (p['sent_qty'] is int) ? p['sent_qty'] as int : (int.tryParse('${p['sent_qty']}') ?? 0);
+                          final pRec = (p['received_qty'] is int) ? p['received_qty'] as int : (int.tryParse('${p['received_qty']}') ?? 0);
+                          final pRem = math.max(0, pSent - pRec);
+                          final pBase = (p['base_qty'] is int) ? p['base_qty'] as int : (int.tryParse('${p['base_qty']}') ?? 1);
+                          final safeBase = pBase > 0 ? pBase : 1;
+                          final excess = pRem - (completeSetsRem * safeBase);
+                          if (excess > 0) {
+                            individualExcessRem += excess;
+                            excessPiecesList.add({
+                              'name': p['name'] ?? 'قطعة',
+                              'rem_qty': excess,
+                              'base_qty': safeBase,
+                            });
+                          }
+                        }
+                      } else {
+                        completeSetsRem = (b['sets_sent'] as int? ?? 1) - (b['sets_received'] as int? ?? 0);
+                        if (completeSetsRem < 0) completeSetsRem = 0;
+                      }
 
                       return Card(
                         elevation: isExpanded ? 3 : 1.5,
                         margin: const EdgeInsets.only(bottom: 10),
                         shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14),
+                          borderRadius: BorderRadius.circular(16),
                           side: BorderSide(
                             color: isDone
                                 ? Colors.green.shade200
@@ -2139,7 +2419,7 @@ class _UpholstererScreenState extends State<UpholstererScreen> {
                           ),
                         ),
                         child: InkWell(
-                          borderRadius: BorderRadius.circular(14),
+                          borderRadius: BorderRadius.circular(16),
                           onTap: () {
                             setState(() {
                               if (isExpanded) {
@@ -2154,67 +2434,145 @@ class _UpholstererScreenState extends State<UpholstererScreen> {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                // صف الملخص الرئيسي (دائماً ظاهر) مع زر استلام مباشر قبل التوسع والسهم الجانبي للتوسيع
+                                // صف الملخص الرئيسي بنمط تصميم المخزن: أفاتار الأطقم + أفاتار الفردي + اسم الصنف والمنجد + أزرار
                                 Row(
                                   children: [
+                                    // 1. أفاتار الأطقم المتبقية
                                     Container(
-                                      padding: const EdgeInsets.all(7),
+                                      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
                                       decoration: BoxDecoration(
-                                        color: isDone ? Colors.green.shade50 : AppTheme.primaryNavy.withValues(alpha: 0.08),
+                                        gradient: LinearGradient(
+                                          colors: completeSetsRem > 0
+                                              ? [AppTheme.primaryNavy, const Color(0xFF2B5282)]
+                                              : (isDone
+                                                  ? [Colors.green.shade700, Colors.green.shade600]
+                                                  : [Colors.grey.shade700, Colors.grey.shade600]),
+                                        ),
                                         borderRadius: BorderRadius.circular(10),
+                                        boxShadow: [
+                                          BoxShadow(
+                                            color: Colors.black.withValues(alpha: 0.1),
+                                            blurRadius: 3,
+                                            offset: const Offset(0, 1),
+                                          ),
+                                        ],
                                       ),
-                                      child: Icon(
-                                        Icons.weekend_rounded,
-                                        color: isDone ? Colors.green.shade700 : AppTheme.primaryNavy,
-                                        size: 21,
+                                      child: Column(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          const Text(
+                                            'الأطقم',
+                                            style: TextStyle(fontSize: 9.5, color: AppTheme.royalGold, fontWeight: FontWeight.bold),
+                                          ),
+                                          Text(
+                                            '$completeSetsRem',
+                                            style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: Colors.white),
+                                          ),
+                                        ],
                                       ),
                                     ),
-                                    const SizedBox(width: 8),
+                                    const SizedBox(width: 6),
+
+                                    // 2. أفاتار الفردي (اضغط لعرض تفاصيل القطع الفردية المتبقية لدى المنجد كما في المخزن)
+                                    Material(
+                                      color: Colors.transparent,
+                                      child: InkWell(
+                                        borderRadius: BorderRadius.circular(10),
+                                        onTap: () {
+                                          _showUpholstererIndividualPiecesDialog(
+                                            context: context,
+                                            setName: (b['category_name'] ?? '').toString(),
+                                            upholstererName: (b['upholsterer_name'] ?? '').toString(),
+                                            completeSets: completeSetsRem,
+                                            totalExcess: individualExcessRem,
+                                            excessPieces: excessPiecesList,
+                                          );
+                                        },
+                                        child: Tooltip(
+                                          message: 'اضغط لعرض تفاصيل القطع الفردية المتبقية',
+                                          child: Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+                                            decoration: BoxDecoration(
+                                              gradient: LinearGradient(
+                                                colors: individualExcessRem > 0
+                                                    ? [const Color(0xFFD97706), const Color(0xFFB45309)]
+                                                    : [Colors.blueGrey.shade800, Colors.blueGrey.shade700],
+                                              ),
+                                              borderRadius: BorderRadius.circular(10),
+                                              boxShadow: [
+                                                BoxShadow(
+                                                  color: Colors.black.withValues(alpha: 0.1),
+                                                  blurRadius: 3,
+                                                  offset: const Offset(0, 1),
+                                                ),
+                                              ],
+                                            ),
+                                            child: Column(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                const Text(
+                                                  'فردي',
+                                                  style: TextStyle(fontSize: 9.5, color: Colors.white, fontWeight: FontWeight.bold),
+                                                ),
+                                                Text(
+                                                  '$individualExcessRem',
+                                                  style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: Colors.white),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 10),
+
+                                    // اسم الصنف واسم المنجد + حالة التوفر
                                     Expanded(
                                       child: Column(
                                         crossAxisAlignment: CrossAxisAlignment.start,
                                         children: [
+                                          Text(
+                                            'طقم: ${b['category_name']}',
+                                            style: const TextStyle(
+                                              fontWeight: FontWeight.bold,
+                                              fontSize: 15.5,
+                                              color: AppTheme.primaryNavy,
+                                            ),
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                          const SizedBox(height: 3),
                                           Wrap(
                                             spacing: 6,
                                             runSpacing: 3,
                                             crossAxisAlignment: WrapCrossAlignment.center,
                                             children: [
                                               Text(
-                                                'طقم: ${b['category_name']}',
-                                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: AppTheme.primaryNavy),
+                                                'المنجد: ${b['upholsterer_name']}',
+                                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12.5, color: Colors.brown),
                                               ),
                                               Container(
-                                                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                                                 decoration: BoxDecoration(
-                                                  color: isDone ? Colors.green.shade50 : Colors.amber.shade50,
-                                                  borderRadius: BorderRadius.circular(14),
+                                                  color: isDone ? Colors.green.shade50 : (completeSetsRem > 0 ? Colors.blue.shade50 : Colors.amber.shade50),
+                                                  borderRadius: BorderRadius.circular(6),
                                                   border: Border.all(
-                                                    color: isDone ? Colors.green : Colors.amber.shade700,
+                                                    color: isDone ? Colors.green.shade300 : (completeSetsRem > 0 ? Colors.blue.shade300 : Colors.amber.shade400),
                                                   ),
                                                 ),
                                                 child: Text(
-                                                  isDone ? 'مكتمل' : 'متبقي ${bSetsRem > 0 ? '$bSetsRem طقم' : '$rem قطعة'}',
+                                                  isDone
+                                                      ? 'مكتمل الاستلام'
+                                                      : (completeSetsRem > 0
+                                                          ? 'متبقي ($completeSetsRem طقم${individualExcessRem > 0 ? " + $individualExcessRem فردي" : ""})'
+                                                          : (individualExcessRem > 0 ? 'متبقي $individualExcessRem فردي' : 'متبقي $rem قطعة')),
                                                   style: TextStyle(
                                                     fontSize: 10.5,
                                                     fontWeight: FontWeight.bold,
-                                                    color: isDone ? Colors.green.shade800 : Colors.amber.shade900,
+                                                    color: isDone
+                                                        ? Colors.green.shade800
+                                                        : (completeSetsRem > 0 ? AppTheme.primaryNavy : Colors.amber.shade900),
                                                   ),
                                                 ),
-                                              ),
-                                            ],
-                                          ),
-                                          const SizedBox(height: 3),
-                                          Wrap(
-                                            spacing: 6,
-                                            runSpacing: 2,
-                                            children: [
-                                              Text(
-                                                'المنجد: ${b['upholsterer_name']}',
-                                                style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 12.5, color: Colors.brown),
-                                              ),
-                                              Text(
-                                                '| الأطقم: ${(b['sets_received'] as int?) ?? 0}/${(b['sets_sent'] as int?) ?? 1} | القطع: $rec/$sent',
-                                                style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: Colors.grey.shade800),
                                               ),
                                             ],
                                           ),
@@ -2278,7 +2636,7 @@ class _UpholstererScreenState extends State<UpholstererScreen> {
                                   const Divider(height: 1),
                                   const SizedBox(height: 10),
 
-                                  // شريط التقدم
+                                  // 1. شريط نسبة الاستلام المنجز
                                   ClipRRect(
                                     borderRadius: BorderRadius.circular(6),
                                     child: LinearProgressIndicator(
@@ -2290,288 +2648,109 @@ class _UpholstererScreenState extends State<UpholstererScreen> {
                                       ),
                                     ),
                                   ),
-                                  const SizedBox(height: 12),
+                                  const SizedBox(height: 10),
 
-                                  // تفاصيل القطع والتواريخ بتنسيق احترافي ومميز بصرياً
-                                  Container(
-                                    padding: const EdgeInsets.all(12),
-                                    decoration: BoxDecoration(
-                                      color: const Color(0xFFF8FAFC),
-                                      borderRadius: BorderRadius.circular(12),
-                                      border: Border.all(color: Colors.blueGrey.shade100),
-                                    ),
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        Row(
-                                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  // 2. بطاقة ملخص القطع الأنيقة والذكية بدون ازدحام (بطاقات مضغوطة أفقية لكل قطعة)
+                                  Row(
+                                    children: [
+                                      const Icon(Icons.chair_rounded, size: 16, color: AppTheme.primaryNavy),
+                                      const SizedBox(width: 6),
+                                      const Text(
+                                        'حالة قطع الطقم لدى المنجد:',
+                                        style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: AppTheme.primaryNavy),
+                                      ),
+                                      const Spacer(),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                        decoration: BoxDecoration(
+                                          color: isDone ? Colors.green.shade50 : Colors.amber.shade50,
+                                          borderRadius: BorderRadius.circular(6),
+                                          border: Border.all(
+                                            color: isDone ? Colors.green.shade300 : Colors.amber.shade300,
+                                          ),
+                                        ),
+                                        child: Text(
+                                          isDone ? 'مكتمل الاستلام' : 'المتبقي: $rem قطعة',
+                                          style: TextStyle(
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.bold,
+                                            color: isDone ? Colors.green.shade800 : Colors.amber.shade900,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 8),
+
+                                  // شبكة بطاقات القطع الذكية والموجزة
+                                  Wrap(
+                                    spacing: 8,
+                                    runSpacing: 8,
+                                    children: pieces.map((p) {
+                                      final pName = (p['name'] ?? 'قطعة').toString();
+                                      final int pSent = (p['sent_qty'] as int?) ?? 1;
+                                      final int pRec = (p['received_qty'] as int?) ?? 0;
+                                      final int pRem = math.max(0, pSent - pRec);
+                                      final bool pDone = pRem == 0;
+
+                                      return Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                                        decoration: BoxDecoration(
+                                          color: pDone
+                                              ? const Color(0xFFF0FDF4)
+                                              : (pRec > 0 ? const Color(0xFFFFFBEB) : Colors.white),
+                                          borderRadius: BorderRadius.circular(10),
+                                          border: Border.all(
+                                            color: pDone
+                                                ? Colors.green.shade300
+                                                : (pRec > 0 ? Colors.amber.shade300 : Colors.grey.shade300),
+                                          ),
+                                        ),
+                                        child: Row(
+                                          mainAxisSize: MainAxisSize.min,
                                           children: [
-                                            const Row(
-                                              children: [
-                                                Icon(Icons.inventory_2_outlined, size: 17, color: AppTheme.primaryNavy),
-                                                SizedBox(width: 6),
-                                                Text(
-                                                  'تفاصيل القطع وتواريخ الإرسال والاستلام:',
-                                                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: AppTheme.primaryNavy),
-                                                ),
-                                              ],
+                                            Icon(
+                                              pDone
+                                                  ? Icons.check_circle_rounded
+                                                  : (pRec > 0 ? Icons.timelapse_rounded : Icons.chair_rounded),
+                                              size: 15,
+                                              color: pDone
+                                                  ? Colors.green.shade700
+                                                  : (pRec > 0 ? const Color(0xFFD97706) : AppTheme.primaryNavy),
                                             ),
+                                            const SizedBox(width: 6),
+                                            Text(
+                                              pName,
+                                              style: TextStyle(
+                                                fontWeight: FontWeight.bold,
+                                                fontSize: 12.5,
+                                                color: pDone ? Colors.green.shade900 : AppTheme.primaryNavy,
+                                              ),
+                                            ),
+                                            const SizedBox(width: 8),
                                             Container(
-                                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                                               decoration: BoxDecoration(
-                                                color: isDone ? Colors.green.shade50 : Colors.amber.shade50,
-                                                borderRadius: BorderRadius.circular(8),
-                                                border: Border.all(
-                                                  color: isDone ? Colors.green.shade300 : Colors.amber.shade300,
-                                                ),
+                                                color: pDone
+                                                    ? Colors.green.shade700
+                                                    : (pRec > 0 ? const Color(0xFFD97706) : AppTheme.primaryNavy),
+                                                borderRadius: BorderRadius.circular(6),
                                               ),
                                               child: Text(
-                                                isDone ? 'مكتمل الاستلام' : 'المتبقي: ${sent - rec} قطعة',
-                                                style: TextStyle(
-                                                  fontSize: 11,
+                                                pDone
+                                                    ? 'مكتمل ($pSent)'
+                                                    : 'استلم $pRec من $pSent (باقي $pRem)',
+                                                style: const TextStyle(
+                                                  color: Colors.white,
+                                                  fontSize: 10.5,
                                                   fontWeight: FontWeight.bold,
-                                                  color: isDone ? Colors.green.shade800 : Colors.amber.shade900,
                                                 ),
                                               ),
                                             ),
                                           ],
                                         ),
-                                        const SizedBox(height: 10),
-                                        ...pieces.map((p) {
-                                          final pName = (p['name'] ?? 'قطعة').toString();
-                                          final int pSent = (p['sent_qty'] as int?) ?? 1;
-                                          final int pRec = (p['received_qty'] as int?) ?? 0;
-                                          final pSentDate = p['sent_date'] ?? b['sent_date'];
-                                          final pRecDate = p['received_date'];
-                                          final bool pieceDone = (pSent - pRec) <= 0;
-
-                                          final formattedSentDate = pSentDate != null
-                                              ? StockMovementHelper.formatDateString12(pSentDate.toString())
-                                              : 'غير محدد';
-                                          final formattedRecDate = pRecDate != null && pRecDate.toString().isNotEmpty
-                                              ? StockMovementHelper.formatDateString12(pRecDate.toString())
-                                              : '';
-
-                                          final sentBlock = Container(
-                                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                                            decoration: BoxDecoration(
-                                              color: const Color(0xFFF1F5F9),
-                                              borderRadius: BorderRadius.circular(8),
-                                              border: Border.all(color: const Color(0xFFCBD5E1)),
-                                            ),
-                                            child: Column(
-                                              crossAxisAlignment: CrossAxisAlignment.start,
-                                              children: [
-                                                Row(
-                                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                                  children: [
-                                                    const Row(
-                                                      children: [
-                                                        Icon(Icons.outbox_rounded, size: 15, color: Color(0xFF1E3A8A)),
-                                                        SizedBox(width: 4),
-                                                        Text(
-                                                          'المسلّم للمنجد:',
-                                                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Color(0xFF1E3A8A)),
-                                                        ),
-                                                      ],
-                                                    ),
-                                                    Container(
-                                                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                                      decoration: BoxDecoration(
-                                                        color: const Color(0xFF1E3A8A),
-                                                        borderRadius: BorderRadius.circular(6),
-                                                      ),
-                                                      child: Text(
-                                                        '$pSent قطعة',
-                                                        style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
-                                                      ),
-                                                    ),
-                                                  ],
-                                                ),
-                                                const SizedBox(height: 5),
-                                                Row(
-                                                  children: [
-                                                    const Icon(Icons.calendar_month_rounded, size: 12, color: Colors.blueGrey),
-                                                    const SizedBox(width: 4),
-                                                    Expanded(
-                                                      child: Text(
-                                                        'تاريخ الإرسال: $formattedSentDate',
-                                                        style: TextStyle(fontSize: 11, color: Colors.blueGrey.shade800, fontWeight: FontWeight.w500),
-                                                        overflow: TextOverflow.ellipsis,
-                                                      ),
-                                                    ),
-                                                  ],
-                                                ),
-                                              ],
-                                            ),
-                                          );
-
-                                          final recBlock = Container(
-                                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                                            decoration: BoxDecoration(
-                                              color: pRec > 0 ? const Color(0xFFF0FDF4) : const Color(0xFFF8FAFC),
-                                              borderRadius: BorderRadius.circular(8),
-                                              border: Border.all(
-                                                color: pRec > 0 ? const Color(0xFF86EFAC) : const Color(0xFFE2E8F0),
-                                              ),
-                                            ),
-                                            child: Column(
-                                              crossAxisAlignment: CrossAxisAlignment.start,
-                                              children: [
-                                                Row(
-                                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                                  children: [
-                                                    Row(
-                                                      children: [
-                                                        Icon(
-                                                          Icons.move_to_inbox_rounded,
-                                                          size: 15,
-                                                          color: pRec > 0 ? const Color(0xFF15803D) : Colors.grey.shade600,
-                                                        ),
-                                                        const SizedBox(width: 4),
-                                                        Text(
-                                                          'المستلم من المنجد:',
-                                                          style: TextStyle(
-                                                            fontWeight: FontWeight.bold,
-                                                            fontSize: 12,
-                                                            color: pRec > 0 ? const Color(0xFF15803D) : Colors.grey.shade700,
-                                                          ),
-                                                        ),
-                                                      ],
-                                                    ),
-                                                    Container(
-                                                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                                      decoration: BoxDecoration(
-                                                        color: pRec > 0 ? const Color(0xFF15803D) : Colors.grey.shade400,
-                                                      ),
-                                                      child: Text(
-                                                        '$pRec قطعة',
-                                                        style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
-                                                      ),
-                                                    ),
-                                                  ],
-                                                ),
-                                                const SizedBox(height: 5),
-                                                Row(
-                                                  children: [
-                                                    Icon(
-                                                      pRec > 0 ? Icons.event_available_rounded : Icons.hourglass_empty_rounded,
-                                                      size: 12,
-                                                      color: pRec > 0 ? const Color(0xFF15803D) : Colors.grey,
-                                                    ),
-                                                    const SizedBox(width: 4),
-                                                    Expanded(
-                                                      child: Text(
-                                                        formattedRecDate.isNotEmpty
-                                                            ? 'تاريخ الاستلام: $formattedRecDate'
-                                                            : 'لم يتم الاستلام بعد',
-                                                        style: TextStyle(
-                                                          fontSize: 11,
-                                                          color: pRec > 0 ? const Color(0xFF166534) : Colors.grey.shade600,
-                                                          fontWeight: pRec > 0 ? FontWeight.bold : FontWeight.normal,
-                                                        ),
-                                                        overflow: TextOverflow.ellipsis,
-                                                      ),
-                                                    ),
-                                                  ],
-                                                ),
-                                              ],
-                                            ),
-                                          );
-
-                                          return Container(
-                                            margin: const EdgeInsets.only(bottom: 8),
-                                            padding: const EdgeInsets.all(10),
-                                            decoration: BoxDecoration(
-                                              color: Colors.white,
-                                              borderRadius: BorderRadius.circular(10),
-                                              border: Border.all(
-                                                color: pieceDone ? Colors.green.shade200 : Colors.grey.shade200,
-                                              ),
-                                              boxShadow: [
-                                                BoxShadow(
-                                                  color: Colors.black.withOpacity(0.02),
-                                                  blurRadius: 4,
-                                                  offset: const Offset(0, 1),
-                                                ),
-                                              ],
-                                            ),
-                                            child: Column(
-                                              crossAxisAlignment: CrossAxisAlignment.start,
-                                              children: [
-                                                Row(
-                                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                                  children: [
-                                                    Row(
-                                                      children: [
-                                                        Icon(
-                                                          Icons.chair_rounded,
-                                                          size: 18,
-                                                          color: pieceDone ? Colors.green : AppTheme.primaryNavy,
-                                                        ),
-                                                        const SizedBox(width: 6),
-                                                        Text(
-                                                          pName,
-                                                          style: const TextStyle(
-                                                            fontWeight: FontWeight.bold,
-                                                            fontSize: 14,
-                                                            color: AppTheme.primaryNavy,
-                                                          ),
-                                                        ),
-                                                      ],
-                                                    ),
-                                                    Container(
-                                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                                                      decoration: BoxDecoration(
-                                                        color: pieceDone ? Colors.green.shade50 : (pRec > 0 ? Colors.amber.shade50 : Colors.grey.shade100),
-                                                        borderRadius: BorderRadius.circular(6),
-                                                        border: Border.all(
-                                                          color: pieceDone ? Colors.green.shade300 : (pRec > 0 ? Colors.amber.shade300 : Colors.grey.shade300),
-                                                        ),
-                                                      ),
-                                                      child: Text(
-                                                        pieceDone
-                                                            ? 'مكتملة بالكامل'
-                                                            : (pRec > 0 ? 'مستلم ($pRec من $pSent)' : 'قيد التنجيد (متبقي $pSent)'),
-                                                        style: TextStyle(
-                                                          fontSize: 10,
-                                                          fontWeight: FontWeight.bold,
-                                                          color: pieceDone
-                                                              ? Colors.green.shade800
-                                                              : (pRec > 0 ? Colors.amber.shade900 : Colors.blueGrey.shade700),
-                                                        ),
-                                                      ),
-                                                    ),
-                                                  ],
-                                                ),
-                                                const SizedBox(height: 8),
-                                                LayoutBuilder(
-                                                  builder: (context, constraints) {
-                                                    if (constraints.maxWidth < 450) {
-                                                      return Column(
-                                                        children: [
-                                                          sentBlock,
-                                                          const SizedBox(height: 6),
-                                                          recBlock,
-                                                        ],
-                                                      );
-                                                    }
-                                                    return Row(
-                                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                                      children: [
-                                                        Expanded(child: sentBlock),
-                                                        const SizedBox(width: 8),
-                                                        Expanded(child: recBlock),
-                                                      ],
-                                                    );
-                                                  },
-                                                ),
-                                              ],
-                                            ),
-                                          );
-                                        }),
-                                      ],
-                                    ),
+                                      );
+                                    }).toList(),
                                   ),
                                   const SizedBox(height: 12),
 

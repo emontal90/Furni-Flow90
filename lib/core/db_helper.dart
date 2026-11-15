@@ -1,5 +1,5 @@
-import 'dart:convert';
 import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:furniture_erp/core/category_stock_helper.dart';
 import 'package:path/path.dart' as p;
 import 'package:sqflite/sqflite.dart';
 
@@ -100,29 +100,8 @@ class DBHelper {
       } catch (_) {}
 
       try {
-        // تسوية وتصفير قطع أي صنف رصيد أطقمه صفر
-        final zeroCats = await db.query('categories', where: 'stock_qty = 0 OR stock_qty IS NULL');
-        for (final z in zeroCats) {
-          final String raw = (z['components_json'] ?? '[]').toString();
-          try {
-            final List comps = jsonDecode(raw);
-            bool changed = false;
-            for (final c in comps) {
-              if ((c['qty'] ?? 0) != 0) {
-                c['qty'] = 0;
-                changed = true;
-              }
-            }
-            if (changed) {
-              await db.update(
-                'categories',
-                {'components_json': jsonEncode(comps)},
-                where: 'id = ?',
-                whereArgs: [z['id']],
-              );
-            }
-          } catch (_) {}
-        }
+        // مزامنة رصيد المخزن الفعلي لجميع الأصناف بناءً على قطعها التأسيسية
+        await CategoryStockHelper.syncDatabaseStock(db);
       } catch (_) {}
     }
 

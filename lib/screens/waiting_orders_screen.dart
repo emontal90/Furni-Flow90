@@ -8,6 +8,7 @@ import '../components/refreshable_empty_view.dart';
 import '../core/app_events.dart';
 import '../core/app_notification.dart';
 import '../core/app_theme.dart';
+import '../core/category_stock_helper.dart';
 import '../core/db_helper.dart';
 import '../core/order_delivery_helper.dart';
 import '../core/stock_movement_helper.dart';
@@ -42,6 +43,7 @@ class _WaitingOrdersScreenState extends State<WaitingOrdersScreen> {
 
   Future<void> _loadOrders() async {
     final db = await DBHelper.instance.database;
+    await CategoryStockHelper.syncDatabaseStock(db);
     final data = await db.query('orders',
         where: "status = 'waiting'", orderBy: 'delivery_date ASC');
     final cats = await db.query('categories', columns: ['id', 'components_json']);
@@ -258,7 +260,7 @@ class _WaitingOrdersScreenState extends State<WaitingOrdersScreen> {
                       ...categories.map((cat) {
                         return DropdownMenuItem<int>(
                           value: cat['id'] as int,
-                          child: Text((cat['name'] ?? '').toString()),
+                          child: Text(CategoryStockHelper.formatDropdownItem(cat)),
                         );
                       }),
                     ],
@@ -630,7 +632,7 @@ class _WaitingOrdersScreenState extends State<WaitingOrdersScreen> {
                                       items: otherCategories.map((c) {
                                         return DropdownMenuItem<int>(
                                           value: c['id'] as int,
-                                          child: Text('${c['name']} (رصيد: ${c['stock_qty']})'),
+                                          child: Text(CategoryStockHelper.formatDropdownItem(c, prefix: 'رصيد')),
                                         );
                                       }).toList(),
                                       onChanged: (val) {

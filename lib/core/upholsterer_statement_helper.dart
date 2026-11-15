@@ -186,6 +186,36 @@ class UpholstererStatementHelper {
     return '0';
   }
 
+  /// تنسيق ملخص الصنف في سطر واحد مختصر ومحكم مثل الكشكول اليدوي (مثال: 7 طقم كابوتكا + 3 ك ك + 4 ك ص)
+  static String formatCompactLine({
+    required String categoryName,
+    required int sets,
+    required Map<String, int> excessPieces,
+  }) {
+    final buffer = StringBuffer();
+    final excessParts = <String>[];
+    excessPieces.forEach((pName, qty) {
+      if (qty > 0) {
+        excessParts.add('$qty $pName');
+      }
+    });
+
+    if (sets > 0) {
+      buffer.write('$sets طقم $categoryName');
+      if (excessParts.isNotEmpty) {
+        buffer.write(' + ${excessParts.join(" + ")}');
+      }
+    } else {
+      if (excessParts.isNotEmpty) {
+        buffer.write('${excessParts.join(" + ")} $categoryName');
+      } else {
+        buffer.write(categoryName);
+      }
+    }
+
+    return buffer.toString();
+  }
+
   static List<Map<String, dynamic>> _parseJsonPieces(dynamic raw) {
     if (raw == null) return const [];
     try {

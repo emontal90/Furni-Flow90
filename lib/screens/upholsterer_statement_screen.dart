@@ -1002,17 +1002,12 @@ class _StatementGroupSection extends StatelessWidget {
     required this.section,
   });
 
-  static const int _maxVisibleOperationsInCard = 25;
-
   @override
   Widget build(BuildContext context) {
     final summaryText = UpholstererStatementHelper.formatSetsAndIndividual(
       section.totalSets,
       section.totalIndividualPieces,
     );
-
-    final visibleOps = section.operations.take(_maxVisibleOperationsInCard).toList();
-    final hiddenOpsCount = section.operations.length - visibleOps.length;
 
     return Container(
       decoration: BoxDecoration(
@@ -1072,183 +1067,69 @@ class _StatementGroupSection extends StatelessWidget {
             )
           else
             Padding(
-              padding: const EdgeInsets.all(11),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  // ملخص الأصناف داخل القسم
-                  Text(
-                    'ملخص الأصناف (${section.categorySummaries.length}):',
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.grey.shade700,
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  ...section.categorySummaries.map((cat) {
-                    final catLabel = UpholstererStatementHelper.formatSetsAndIndividual(
-                      cat.sets,
-                      cat.individualPieces,
+                  ...section.categorySummaries.asMap().entries.map((entry) {
+                    final int index = entry.key + 1;
+                    final cat = entry.value;
+
+                    // صياغة السطر المختصر والذكي مثل الكشكول اليدوي (مثال: 7 طقم كابوتكا + 3 ك ك + 4 ك ص)
+                    final compactText = UpholstererStatementHelper.formatCompactLine(
+                      categoryName: cat.categoryName,
+                      sets: cat.sets,
+                      excessPieces: cat.excessPieceTotals,
                     );
-                    final piecesLine = cat.pieceTotals.entries
-                        .map((e) => '${e.key}: ${e.value}')
-                        .join(' • ');
 
                     return Container(
-                      margin: const EdgeInsets.only(bottom: 7),
+                      margin: const EdgeInsets.only(bottom: 6),
                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                       decoration: BoxDecoration(
                         color: const Color(0xFFF8FAFC),
                         borderRadius: BorderRadius.circular(10),
                         border: Border.all(color: Colors.blueGrey.shade100),
                       ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Expanded(
-                                child: Text(
-                                  'طقم: ${cat.categoryName}',
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 13.5,
-                                    color: AppTheme.primaryNavy,
-                                  ),
-                                ),
-                              ),
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                                decoration: BoxDecoration(
-                                  color: headerBgColor,
-                                  borderRadius: BorderRadius.circular(8),
-                                  border: Border.all(color: borderColor),
-                                ),
-                                child: Text(
-                                  '$catLabel (${cat.totalPieces} قطعة)',
-                                  style: TextStyle(
-                                    fontSize: 11.5,
-                                    fontWeight: FontWeight.bold,
-                                    color: accentColor,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                          if (piecesLine.isNotEmpty) ...[
-                            const SizedBox(height: 4),
-                            Text(
-                              piecesLine,
-                              style: TextStyle(fontSize: 11, color: Colors.grey.shade700),
-                            ),
-                          ],
-                        ],
-                      ),
-                    );
-                  }),
-
-                  // سجل الحركات التفصيلي بالتواريخ
-                  const SizedBox(height: 6),
-                  Text(
-                    'سجل الحركات (${section.operations.length}):',
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.grey.shade700,
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  ...visibleOps.map((op) {
-                    final opSummary = UpholstererStatementHelper.formatSetsAndIndividual(
-                      op.sets,
-                      op.individualPieces,
-                    );
-                    final opPiecesText = op.pieces
-                        .map((p) => '${p['name']} (${p['qty']})')
-                        .join('، ');
-
-                    return Container(
-                      margin: const EdgeInsets.only(bottom: 5),
-                      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 7),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: Colors.grey.shade200),
-                      ),
                       child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                             decoration: BoxDecoration(
-                              color: Colors.grey.shade100,
+                              color: accentColor.withValues(alpha: 0.12),
                               borderRadius: BorderRadius.circular(6),
                             ),
                             child: Text(
-                              op.actionDate.isNotEmpty ? op.actionDate : '-',
+                              '$index',
                               style: TextStyle(
-                                fontSize: 10.5,
+                                fontSize: 11,
                                 fontWeight: FontWeight.bold,
-                                color: Colors.grey.shade800,
+                                color: accentColor,
                               ),
                             ),
                           ),
                           const SizedBox(width: 8),
                           Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Row(
-                                  children: [
-                                    Expanded(
-                                      child: Text(
-                                        '${op.categoryName}${op.upholstererName.isNotEmpty ? ' • ${op.upholstererName}' : ''}',
-                                        style: const TextStyle(
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 12,
-                                          color: AppTheme.primaryNavy,
-                                        ),
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                    ),
-                                    Text(
-                                      opSummary,
-                                      style: TextStyle(
-                                        fontSize: 11.5,
-                                        fontWeight: FontWeight.bold,
-                                        color: accentColor,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                if (opPiecesText.isNotEmpty) ...[
-                                  const SizedBox(height: 2),
-                                  Text(
-                                    opPiecesText,
-                                    style: TextStyle(fontSize: 10.5, color: Colors.grey.shade600),
-                                  ),
-                                ],
-                              ],
+                            child: Text(
+                              compactText,
+                              style: const TextStyle(
+                                fontSize: 13.5,
+                                fontWeight: FontWeight.bold,
+                                color: AppTheme.primaryNavy,
+                              ),
+                            ),
+                          ),
+                          Text(
+                            '(${cat.totalPieces} ق)',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.grey.shade600,
                             ),
                           ),
                         ],
                       ),
                     );
                   }),
-                  if (hiddenOpsCount > 0)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 4),
-                      child: Text(
-                        '+ $hiddenOpsCount عمليات أقدم ضمن نفس الفترة (محتسبة بالكامل في الإجماليات أعلاه)',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: Colors.grey.shade600,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
                 ],
               ),
             ),
