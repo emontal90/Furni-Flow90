@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart' as intl;
 import 'package:path/path.dart' as p;
 import '../components/app_logo.dart';
+import '../components/stat_card.dart';
 import '../core/app_events.dart';
 import '../core/app_notification.dart';
 import '../core/app_theme.dart';
@@ -265,7 +266,7 @@ class _BackupScreenState extends State<BackupScreen> {
           ],
         ),
         content: const Text(
-          'اختر ملف نسخة احتياطية (.db) من ذاكرة الهاتف أو Google Drive.\n\nسيقوم التطبيق أولاً بالتحقق من سلامة الملف وأخذ نسخة وقائية من بياناتك الحالية قبل الاستعادة.',
+          'اختر ملف نسخة احتياطية مشفر (.mtbk) أو تقليدي (.db) من ذاكرة الجهاز أو Google Drive.\n\nسيقوم التطبيق أولاً بالتحقق من سلامة الملف وأخذ نسخة وقائية من بياناتك الحالية قبل الاستعادة.',
           style: TextStyle(fontSize: 13.5, height: 1.5),
         ),
         actions: [
@@ -279,7 +280,7 @@ class _BackupScreenState extends State<BackupScreen> {
               foregroundColor: AppTheme.royalGold,
             ),
             onPressed: () => Navigator.pop(dCtx, true),
-            child: const Text('اختيار الملف (.db)', style: TextStyle(fontWeight: FontWeight.bold)),
+            child: const Text('اختيار الملف (.mtbk / .db)', style: TextStyle(fontWeight: FontWeight.bold)),
           ),
         ],
       ),
@@ -529,7 +530,7 @@ class _BackupScreenState extends State<BackupScreen> {
                 Row(
                   children: [
                     Expanded(
-                      child: _StatCard(
+                      child: CompactStatCard(
                         icon: Icons.data_usage_rounded,
                         title: 'حجم قاعدة البيانات',
                         value: _dbSize,
@@ -539,7 +540,7 @@ class _BackupScreenState extends State<BackupScreen> {
                     ),
                     const SizedBox(width: 10),
                     Expanded(
-                      child: _StatCard(
+                      child: CompactStatCard(
                         icon: Icons.backup_rounded,
                         title: 'النسخ الاحتياطية',
                         value: '${_backups.length} / ${BackupService.maxBackups}',
@@ -549,7 +550,7 @@ class _BackupScreenState extends State<BackupScreen> {
                     ),
                     const SizedBox(width: 10),
                     Expanded(
-                      child: _StatCard(
+                      child: CompactStatCard(
                         icon: Icons.inventory_2_outlined,
                         title: 'الطلبات بالأرشيف',
                         value: '$_archivedOrdersCount أوردر',
@@ -630,7 +631,7 @@ class _BackupScreenState extends State<BackupScreen> {
                             padding: const EdgeInsets.symmetric(vertical: 12),
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                           ),
-                          onPressed: Platform.isAndroid ? _importExternalBackup : null,
+                          onPressed: (Platform.isAndroid || Platform.isWindows) ? _importExternalBackup : null,
                           icon: const Icon(Icons.file_upload_rounded, size: 20),
                           label: const Text(
                             'استيراد نسخة من الهاتف',
@@ -666,9 +667,9 @@ class _BackupScreenState extends State<BackupScreen> {
                           ],
                         ),
                         const SizedBox(height: 6),
-                        const Text(
+                        Text(
                           'تتيح لك الأرشفة الذكية نقل الطلبات التي تم تسليمها قديماً إلى سجل الأرشيف لتسريع التطبيق وتوفير المساحة لشغل سنوات قادمة، مع حفظ نسخة احتياطية تلقائياً قبل البدء.',
-                          style: TextStyle(color: Colors.black54, fontSize: 13),
+                          style: TextStyle(color: AppTheme.textMuted(context), fontSize: 13),
                         ),
                         const SizedBox(height: 14),
 
@@ -956,7 +957,7 @@ class _BackupScreenState extends State<BackupScreen> {
                                     ],
                                   ),
                                 ),
-                                if (Platform.isAndroid)
+                                if (Platform.isAndroid || Platform.isWindows)
                                   const PopupMenuItem<String>(
                                     value: 'share',
                                     child: Row(
@@ -1064,54 +1065,6 @@ class _BackupScreenState extends State<BackupScreen> {
         title: const AppBarTitleWithLogo(title: 'النسخ الاحتياطي والأرشفة الذكية'),
       ),
       body: bodyContent,
-    );
-  }
-}
-
-/// بطاقة إحصائيات صغيرة
-class _StatCard extends StatelessWidget {
-  final IconData icon;
-  final String title;
-  final String value;
-  final String subtitle;
-  final Color color;
-
-  const _StatCard({
-    required this.icon,
-    required this.title,
-    required this.value,
-    required this.subtitle,
-    required this.color,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey.shade200),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.03),
-            blurRadius: 4,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(icon, color: color, size: 22),
-          const SizedBox(height: 6),
-          Text(title, style: const TextStyle(fontSize: 11, color: Colors.black54)),
-          const SizedBox(height: 2),
-          Text(value, style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: color)),
-          const SizedBox(height: 2),
-          Text(subtitle, style: const TextStyle(fontSize: 10, color: Colors.grey)),
-        ],
-      ),
     );
   }
 }

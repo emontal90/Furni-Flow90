@@ -155,7 +155,7 @@ class _CategoriesTabState extends State<CategoriesTab> {
       _MenuPieceItem(name: 'فوتيه', qty: 2),
     ];
 
-    showModalBottomSheet(
+    showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
@@ -417,7 +417,12 @@ class _CategoriesTabState extends State<CategoriesTab> {
           ),
         ),
       ),
-    );
+    ).whenComplete(() {
+      nameCtrl.dispose();
+      for (final p in pieces) {
+        p.dispose();
+      }
+    });
   }
 
   // ---------------------------------------------------------------------------
@@ -444,7 +449,7 @@ class _CategoriesTabState extends State<CategoriesTab> {
       pieces.add(_MenuPieceItem(name: 'فوتيه', qty: 2));
     }
 
-    showModalBottomSheet(
+    showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
@@ -709,31 +714,31 @@ class _CategoriesTabState extends State<CategoriesTab> {
                     }
 
                     final db = await DBHelper.instance.database;
-                    await db.update(
-                      'categories',
-                      {
-                        'name': newCatName,
-                        'components_json': jsonEncode(compsData),
-                      },
-                      where: 'id = ?',
-                      whereArgs: [cat['id']],
-                    );
+                    await db.transaction((txn) async {
+                      await txn.update(
+                        'categories',
+                        {
+                          'name': newCatName,
+                          'components_json': jsonEncode(compsData),
+                        },
+                        where: 'id = ?',
+                        whereArgs: [cat['id']],
+                      );
 
-                    // تحديث الاسم في الجداول المرتبطة إذا تغير
-                    if (newCatName != cat['name']) {
-                      await db.update(
-                        'orders',
-                        {'category_name': newCatName},
-                        where: 'category_id = ?',
-                        whereArgs: [cat['id']],
-                      );
-                      await db.update(
-                        'upholsterer_batches',
-                        {'category_name': newCatName},
-                        where: 'category_id = ?',
-                        whereArgs: [cat['id']],
-                      );
-                    }
+                      // تحديث الاسم في كافة الجداول المرتبطة (بما فيها الأرشيف والحركات وكشف المنجد)
+                      if (newCatName != cat['name']) {
+                        await txn.update('orders', {'category_name': newCatName},
+                            where: 'category_id = ?', whereArgs: [cat['id']]);
+                        await txn.update('archived_orders', {'category_name': newCatName},
+                            where: 'category_id = ?', whereArgs: [cat['id']]);
+                        await txn.update('upholsterer_batches', {'category_name': newCatName},
+                            where: 'category_id = ?', whereArgs: [cat['id']]);
+                        await txn.update('upholsterer_transactions', {'category_name': newCatName},
+                            where: 'category_id = ?', whereArgs: [cat['id']]);
+                        await txn.update('stock_movements', {'category_name': newCatName},
+                            where: 'category_id = ?', whereArgs: [cat['id']]);
+                      }
+                    });
 
                     AppEvents.instance.notifyAll();
                     if (mounted) {
@@ -750,7 +755,12 @@ class _CategoriesTabState extends State<CategoriesTab> {
           ),
         ),
       ),
-    );
+    ).whenComplete(() {
+      nameCtrl.dispose();
+      for (final p in pieces) {
+        p.dispose();
+      }
+    });
   }
 
   // ---------------------------------------------------------------------------

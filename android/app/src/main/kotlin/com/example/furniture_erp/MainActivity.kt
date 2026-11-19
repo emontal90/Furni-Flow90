@@ -27,9 +27,11 @@ class MainActivity: FlutterFragmentActivity() {
         private const val UPDATER_CHANNEL = "com.example.furniture_erp/app_updater"
         private const val BACKUP_CHANNEL = "com.example.furniture_erp/backup_transfer"
         private const val SHARE_CHANNEL = "com.example.furniture_erp/share"
+        private const val SECURITY_CHANNEL = "com.example.furniture_erp/security"
         private const val ALLOWED_RELEASE_URL_PREFIX = "https://github.com/emontal90/el-alfy-90/releases"
         private const val PICK_BACKUP_REQUEST_CODE = 4091
         private const val CREATE_BACKUP_DOC_REQUEST_CODE = 4092
+        private const val PICK_LOGO_REQUEST_CODE = 4093
         private const val MAX_EXPORTED_BACKUPS = 5
     }
 
@@ -58,7 +60,7 @@ class MainActivity: FlutterFragmentActivity() {
             MediaStore.MediaColumns.DATE_MODIFIED
         )
         val selection = "${MediaStore.MediaColumns.RELATIVE_PATH} LIKE ?"
-        val selectionArgs = arrayOf("%ElAlfyBackups%")
+        val selectionArgs = arrayOf("%MobilyaTrackBackups%")
         val sortOrder = "${MediaStore.MediaColumns.DATE_MODIFIED} DESC"
 
         contentResolver.query(
@@ -89,6 +91,24 @@ class MainActivity: FlutterFragmentActivity() {
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, SECURITY_CHANNEL)
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "getDeviceId" -> {
+                        try {
+                            val androidId = Settings.Secure.getString(
+                                contentResolver,
+                                Settings.Secure.ANDROID_ID
+                            )
+                            result.success(androidId ?: "")
+                        } catch (_: Exception) {
+                            result.success("")
+                        }
+                    }
+                    else -> result.notImplemented()
+                }
+            }
 
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, UPDATER_CHANNEL)
             .setMethodCallHandler { call, result ->
@@ -178,7 +198,7 @@ class MainActivity: FlutterFragmentActivity() {
                             updateWakeLock?.acquire(20 * 60 * 1000L)
                             window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
                             result.success(true)
-                        } catch (e: Exception) {
+                        } catch (_: Exception) {
                             result.success(false)
                         }
                     }
@@ -221,7 +241,7 @@ class MainActivity: FlutterFragmentActivity() {
                                     put(MediaStore.MediaColumns.MIME_TYPE, "application/octet-stream")
                                     put(
                                         MediaStore.MediaColumns.RELATIVE_PATH,
-                                        "${Environment.DIRECTORY_DOWNLOADS}/ElAlfyBackups"
+                                        "${Environment.DIRECTORY_DOWNLOADS}/MobilyaTrackBackups"
                                     )
                                     put(MediaStore.MediaColumns.IS_PENDING, 1)
                                 }
@@ -241,7 +261,7 @@ class MainActivity: FlutterFragmentActivity() {
                                 contentResolver.update(uri, values, null, null)
                                 pruneOldDownloadsBackups()
 
-                                result.success("Download/ElAlfyBackups/$safeName")
+                                result.success("Download/MobilyaTrackBackups/$safeName")
                             } catch (e: Exception) {
                                 result.error("EXPORT_FAILED", e.message ?: "فشل تصدير النسخة", null)
                             }
@@ -263,6 +283,7 @@ class MainActivity: FlutterFragmentActivity() {
                     "shareBackupFile" -> {
                         val path = call.argument<String>("path")
                         val fileName = call.argument<String>("fileName")
+                        val subject = call.argument<String>("subject") ?: "نسخة احتياطية مشفرة - موبيليا تراك"
                         if (path.isNullOrBlank() || fileName.isNullOrBlank()) {
                             result.error("INVALID_ARGS", "Missing backup path or filename", null)
                             return@setMethodCallHandler
@@ -289,7 +310,7 @@ class MainActivity: FlutterFragmentActivity() {
                             val sendIntent = Intent(Intent.ACTION_SEND).apply {
                                 type = "application/octet-stream"
                                 putExtra(Intent.EXTRA_STREAM, uri)
-                                putExtra(Intent.EXTRA_SUBJECT, "نسخة احتياطية - نظام الألفي")
+                                putExtra(Intent.EXTRA_SUBJECT, subject)
                                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                             }
                             startActivity(Intent.createChooser(sendIntent, "حفظ أو مشاركة النسخة الاحتياطية"))
@@ -309,6 +330,18 @@ class MainActivity: FlutterFragmentActivity() {
                             type = "*/*"
                         }
                         startActivityForResult(intent, PICK_BACKUP_REQUEST_CODE)
+                    }
+                    "pickLogoImage" -> {
+                        if (pendingBackupResult != null) {
+                            result.error("BUSY", "يوجد عملية قيد التنفيذ", null)
+                            return@setMethodCallHandler
+                        }
+                        pendingBackupResult = result
+                        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                            addCategory(Intent.CATEGORY_OPENABLE)
+                            type = "image/*"
+                        }
+                        startActivityForResult(intent, PICK_LOGO_REQUEST_CODE)
                     }
                     else -> result.notImplemented()
                 }
@@ -333,7 +366,6 @@ class MainActivity: FlutterFragmentActivity() {
                             val shareDir = File(cacheDir, "shared_statements")
                             if (!shareDir.exists()) shareDir.mkdirs()
 
-                            // تنظيف الملفات المؤقتة القديمة فقط (أكثر من ساعتين) مع الحفاظ التام على الملف الحالي
                             val now = System.currentTimeMillis()
                             shareDir.listFiles()?.forEach { old ->
                                 if (old.isFile && old.canonicalPath != sourceFile.canonicalPath && (now - old.lastModified() > 2 * 3600 * 1000L)) {
@@ -383,7 +415,6 @@ class MainActivity: FlutterFragmentActivity() {
                             val hasWhatsApp = isPackageInstalled("com.whatsapp")
                             val hasWhatsAppBusiness = isPackageInstalled("com.whatsapp.w4b")
 
-                            // منح الصلاحية المباشرة لتطبيقات واتساب قبل الإطلاق
                             if (hasWhatsApp) {
                                 try {
                                     grantUriPermission("com.whatsapp", uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
@@ -412,7 +443,6 @@ class MainActivity: FlutterFragmentActivity() {
                                     result.success(true)
                                     return@setMethodCallHandler
                                 } catch (_: Exception) {
-                                    // إذا تعذر الفتح المباشر يتم فتح نافذة الاختيار العامة
                                 }
                             }
 
@@ -457,7 +487,7 @@ class MainActivity: FlutterFragmentActivity() {
                 val uri = data.data!!
                 val importDir = File(cacheDir, "shared_backups")
                 if (!importDir.exists()) importDir.mkdirs()
-                val tempFile = File(importDir, "imported_candidate.db")
+                val tempFile = File(importDir, "imported_candidate.mtbk")
                 if (tempFile.exists()) tempFile.delete()
 
                 contentResolver.openInputStream(uri)?.use { input ->
@@ -469,19 +499,53 @@ class MainActivity: FlutterFragmentActivity() {
                     return
                 }
 
-                // التحقق من ترويسة ملف SQLite الرسمية: "SQLite format 3\0"
-                val expectedHeader = "SQLite format 3\u0000".toByteArray(Charsets.US_ASCII)
+                // قبول الملفات المشفرة (MTRKENC1) أو ملفات SQLite التقليدية (SQLite format 3\0)
+                val sqliteHeader = "SQLite format 3\u0000".toByteArray(Charsets.US_ASCII)
+                val encryptedHeader = "MTRKENC1".toByteArray(Charsets.US_ASCII)
                 val header = ByteArray(16)
                 val bytesRead = FileInputStream(tempFile).use { it.read(header) }
-                if (bytesRead < 16 || !header.contentEquals(expectedHeader) || tempFile.length() < 1024) {
+
+                val isSqlite = bytesRead >= 16 && header.contentEquals(sqliteHeader) && tempFile.length() >= 1024
+                val isEncrypted = bytesRead >= 8 && header.copyOfRange(0, 8).contentEquals(encryptedHeader) && tempFile.length() >= 128
+
+                if (!isSqlite && !isEncrypted) {
                     tempFile.delete()
-                    callback.error("INVALID_SQLITE", "الملف المختار ليس نسخة احتياطية صالحة (.db)", null)
+                    callback.error("INVALID_BACKUP", "الملف المختار ليس نسخة احتياطية صالحة (.mtbk أو .db)", null)
                     return
                 }
 
                 callback.success(tempFile.absolutePath)
             } catch (e: Exception) {
                 callback.error("IMPORT_FAILED", e.message ?: "فشل قراءة النسخة الاحتياطية", null)
+            }
+            return
+        }
+
+        if (requestCode == PICK_LOGO_REQUEST_CODE) {
+            val callback = pendingBackupResult ?: return
+            pendingBackupResult = null
+
+            if (resultCode != Activity.RESULT_OK || data?.data == null) {
+                callback.success(null)
+                return
+            }
+
+            try {
+                val uri = data.data!!
+                val logoDir = File(cacheDir, "picked_logos")
+                if (!logoDir.exists()) logoDir.mkdirs()
+                val tempFile = File(logoDir, "picked_logo_${System.currentTimeMillis()}.png")
+                contentResolver.openInputStream(uri)?.use { input ->
+                    FileOutputStream(tempFile).use { output ->
+                        input.copyTo(output)
+                    }
+                } ?: run {
+                    callback.error("READ_FAILED", "تعذر قراءة صورة الشعار", null)
+                    return
+                }
+                callback.success(tempFile.absolutePath)
+            } catch (e: Exception) {
+                callback.error("PICK_LOGO_FAILED", e.message ?: "فشل اختيار الشعار", null)
             }
             return
         }
@@ -515,4 +579,3 @@ class MainActivity: FlutterFragmentActivity() {
         }
     }
 }
-

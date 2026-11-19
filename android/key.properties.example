@@ -1,0 +1,10 @@
+# انسخ هذا الملف إلى android/key.properties واملأ بيانات مفتاح التوقيع التجاري الخاص بك
+# لا ترفع android/key.properties أو ملف .jks إلى GitHub أبداً!
+#
+# لإنشاء مفتاح توقيع جديد:
+# keytool -genkey -v -keystore android/mobilya_track_release.jks -keyalg RSA -keysize 2048 -validity 10000 -alias mobilya_track
+
+storePassword=CHANGE_ME_STORE_PASSWORD
+keyPassword=CHANGE_ME_KEY_PASSWORD
+keyAlias=mobilya_track
+storeFile=../mobilya_track_release.jks

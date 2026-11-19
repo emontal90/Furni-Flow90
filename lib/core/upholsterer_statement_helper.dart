@@ -230,7 +230,7 @@ class UpholstererStatementHelper {
     }
   }
 
-  static List<Map<String, dynamic>> _parseBatchPieces(Map<String, dynamic> batch) {
+  static List<Map<String, dynamic>> parseBatchPieces(Map<String, dynamic> batch) {
     final parsed = _parseJsonPieces(batch['pieces_json']);
     if (parsed.isNotEmpty) return parsed;
 
@@ -340,7 +340,7 @@ class UpholstererStatementHelper {
       final String uphName = (batch['upholsterer_name'] ?? '').toString().trim();
       final int catId = _parseInt(batch['category_id']);
       final String catName = (batch['category_name'] ?? '').toString().trim();
-      final batchPieces = _parseBatchPieces(batch);
+      final batchPieces = parseBatchPieces(batch);
 
       // أ) التسليم للمنجد
       if (batchId == null || !trackedSendBatchIds.contains(batchId)) {

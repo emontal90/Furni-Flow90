@@ -696,7 +696,10 @@ class _ShowroomStockTabState extends State<ShowroomStockTab> {
                             categoryName: cat['name'],
                             movementType: pieceDiff > 0 ? 'piece_add' : 'piece_deduct',
                             qtyChange: pieceDiff,
-                            stockAfter: finalStock,
+                            stockAfter: calculatedSets,
+                            piecesDelta: [
+                              {'name': pName, 'delta': pieceDiff},
+                            ],
                             notes: pieceDiff > 0
                                 ? 'زيادة رصيد قطعة ($pName) بمقدار (+$pieceDiff قطعة) - أصبحت $pQty بدلاً من $oldQty'
                                 : 'إنقاص رصيد قطعة ($pName) بمقدار ($pieceDiff قطعة) - أصبحت $pQty بدلاً من $oldQty',
@@ -723,7 +726,12 @@ class _ShowroomStockTabState extends State<ShowroomStockTab> {
           ),
         ),
       ),
-    );
+    ).whenComplete(() {
+      stockCtrl.dispose();
+      for (final p in pieces) {
+        p.dispose();
+      }
+    });
   }
 
   /// نافذة عرض كشف حركة الطقم في المخزن
@@ -968,7 +976,7 @@ class _ShowroomStockTabState extends State<ShowroomStockTab> {
           margin: const EdgeInsets.fromLTRB(12, 10, 12, 4),
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
           decoration: BoxDecoration(
-            color: isHistoricalMode ? const Color(0xFFFFFBEB) : Colors.white,
+            color: isHistoricalMode ? (AppTheme.isDark(context) ? const Color(0xFF3A2A0A) : const Color(0xFFFFFBEB)) : AppTheme.cardBg(context),
             borderRadius: BorderRadius.circular(12),
             border: Border.all(
               color: isHistoricalMode ? const Color(0xFFD97706) : Colors.grey.shade300,
@@ -1102,34 +1110,10 @@ class _ShowroomStockTabState extends State<ShowroomStockTab> {
                 comps = jsonDecode(cat['components_json']);
               } catch (_) {}
 
-              int completeSets = 0;
-              if (comps.isNotEmpty) {
-                completeSets = comps.map<int>((c) {
-                  final q = (c['qty'] is int) ? c['qty'] as int : (int.tryParse(c['qty']?.toString() ?? '0') ?? 0);
-                  final b = (c['base_qty'] is int) ? c['base_qty'] as int : (int.tryParse(c['base_qty']?.toString() ?? '1') ?? 1);
-                  return q ~/ (b > 0 ? b : 1);
-                }).reduce(math.min);
-              } else {
-                completeSets = (cat['stock_qty'] as int?) ?? 0;
-              }
-
-              final excessPieces = <Map<String, dynamic>>[];
-              int individualPiecesCount = 0;
-              for (final c in comps) {
-                final q = (c['qty'] is int) ? c['qty'] as int : (int.tryParse(c['qty']?.toString() ?? '0') ?? 0);
-                final b = (c['base_qty'] is int) ? c['base_qty'] as int : (int.tryParse(c['base_qty']?.toString() ?? '1') ?? 1);
-                final safeB = b > 0 ? b : 1;
-                final excess = q - (completeSets * safeB);
-                if (excess > 0) {
-                  individualPiecesCount += excess;
-                  excessPieces.add({
-                    'name': (c['name'] ?? 'قطعة').toString(),
-                    'excess_qty': excess,
-                    'total_qty': q,
-                    'base_qty': safeB,
-                  });
-                }
-              }
+              final breakdown = CategoryStockHelper.calculateCategoryBreakdown(cat);
+              final int completeSets = breakdown.completeSets;
+              final int individualPiecesCount = breakdown.individualPieces;
+              final List<Map<String, dynamic>> excessPieces = breakdown.excessPieces;
 
               final int qty = completeSets;
               final int catId = (cat['id'] as int?) ?? i;

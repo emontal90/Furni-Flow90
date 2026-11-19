@@ -1,7 +1,7 @@
 @echo off
 chcp 65001 >nul
 cd /d "%~dp0.."
-title El-Alfy ERP - Auto Build APK
+title MobilyaTrack ERP - Auto Build APK
 
 if exist "D:\flutter\bin" set "PATH=D:\flutter\bin;%PATH%"
 if exist "C:\flutter\bin" set "PATH=C:\flutter\bin;%PATH%"
@@ -22,7 +22,7 @@ for /f "tokens=1 delims=+" %%v in ("%FULL_VER%") do set "APP_VER=%%v"
 if "%APP_VER%"=="" set "APP_VER=1.0.0"
 
 echo ====================================================================
-echo            El-Alfy ERP - Automatic APK Builder (v%APP_VER%)
+echo            MobilyaTrack ERP - Automatic APK Builder (v%APP_VER%)
 echo ====================================================================
 echo.
 echo [1/3] Fetching packages...
@@ -46,15 +46,15 @@ echo.
 echo [3/3] Saving APK inside project folder (releases\)...
 if not exist "releases" mkdir "releases"
 if exist "releases\*.apk" del /Q "releases\*.apk" >nul 2>nul
-copy /Y "build\app\outputs\flutter-apk\app-release.apk" "releases\el-Alfy-v%APP_VER%.apk" >nul
-copy /Y "build\app\outputs\flutter-apk\app-release.apk" "releases\el-Alfy-latest.apk" >nul
+copy /Y "build\app\outputs\flutter-apk\app-release.apk" "releases\MobilyaTrack-v%APP_VER%.apk" >nul
+copy /Y "build\app\outputs\flutter-apk\app-release.apk" "releases\MobilyaTrack-App.apk" >nul
 
 echo.
 echo ====================================================================
 echo [SUCCESS] APK Built Successfully!
 echo Saved inside project folder:
-echo   %cd%\releases\el-Alfy-v%APP_VER%.apk
-echo   %cd%\releases\el-Alfy-latest.apk
+echo   %cd%\releases\MobilyaTrack-v%APP_VER%.apk
+echo   %cd%\releases\MobilyaTrack-App.apk
 echo ====================================================================
 echo.
 start "" explorer "releases"

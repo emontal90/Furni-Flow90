@@ -1,7 +1,7 @@
 @echo off
-title Push El-Alfy to GitHub
+title Push MobilyaTrack to GitHub
 echo ===============================================================
-echo          Pushing El-Alfy project to GitHub Repository
+echo          Pushing MobilyaTrack project to GitHub Repository
 echo       Repository: https://github.com/emontal90/el-alfy-90.git
 echo ===============================================================
 echo.

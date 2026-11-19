@@ -168,24 +168,32 @@ class _CustomersTabState extends State<CustomersTab> {
                 final address = _addressCtrl.text.trim().isEmpty ? null : _addressCtrl.text.trim();
 
                 final db = await DBHelper.instance.database;
-                await db.update(
-                  'customers',
-                  {
-                    'name': name,
-                    'phone': phone,
-                    'address': address,
-                  },
-                  where: 'id = ?',
-                  whereArgs: [c['id']],
-                );
+                await db.transaction((txn) async {
+                  await txn.update(
+                    'customers',
+                    {
+                      'name': name,
+                      'phone': phone,
+                      'address': address,
+                    },
+                    where: 'id = ?',
+                    whereArgs: [c['id']],
+                  );
 
-                // تحديث اسم العميل في جدول الطلبات المرتبطة به
-                await db.update(
-                  'orders',
-                  {'customer_name': name},
-                  where: 'customer_id = ?',
-                  whereArgs: [c['id']],
-                );
+                  // تحديث اسم العميل في جدول الطلبات النشطة وجدول الأرشيف معاً
+                  await txn.update(
+                    'orders',
+                    {'customer_name': name},
+                    where: 'customer_id = ?',
+                    whereArgs: [c['id']],
+                  );
+                  await txn.update(
+                    'archived_orders',
+                    {'customer_name': name},
+                    where: 'customer_id = ?',
+                    whereArgs: [c['id']],
+                  );
+                });
 
                 _nameCtrl.clear();
                 _phoneCtrl.clear();

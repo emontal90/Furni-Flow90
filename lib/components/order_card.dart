@@ -59,6 +59,14 @@ class OrderCard extends StatelessWidget {
 
     final int totalPieces = summary.totalPieces;
     final String deliveryDateStr = order['delivery_date']?.toString() ?? 'غير محدد';
+    final double totalPrice = (order['total_price'] is num)
+        ? (order['total_price'] as num).toDouble()
+        : (double.tryParse('${order['total_price'] ?? 0}') ?? 0.0);
+    final double paidAmount = (order['paid_amount'] is num)
+        ? (order['paid_amount'] as num).toDouble()
+        : (double.tryParse('${order['paid_amount'] ?? 0}') ?? 0.0);
+    final double remainingAmount = (totalPrice - paidAmount) > 0 ? (totalPrice - paidAmount) : 0.0;
+    final bool hasFinancials = totalPrice > 0 || paidAmount > 0;
     final bool showDetails = !collapsible || isExpanded;
 
     final Widget cardBody = Padding(
@@ -94,7 +102,7 @@ class OrderCard extends StatelessWidget {
                       style: TextStyle(
                         fontSize: collapsible ? 15 : 17,
                         fontWeight: FontWeight.bold,
-                        color: AppTheme.primaryNavy,
+                        color: AppTheme.textPrimary(context),
                       ),
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -107,10 +115,10 @@ class OrderCard extends StatelessWidget {
                         children: [
                           Text(
                             'طقم: ${order['category_name']}',
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontWeight: FontWeight.bold,
                               fontSize: 12.5,
-                              color: Colors.black87,
+                              color: AppTheme.textBody(context),
                             ),
                           ),
                           Container(
@@ -291,9 +299,9 @@ class OrderCard extends StatelessWidget {
             const SizedBox(height: 8),
 
             // الصف الثالث: عرض مكونات وقطع الطلب
-            const Text(
+            Text(
               'قطع ومكونات الطلب:',
-              style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.black87),
+              style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppTheme.textBody(context)),
             ),
             const SizedBox(height: 6),
             if (comps.isNotEmpty)
@@ -380,6 +388,49 @@ class OrderCard extends StatelessWidget {
                             fontSize: 12,
                             color: Colors.amber.shade900,
                             fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+
+            // الملخص المالي الاختياري (يظهر فقط عند إدخال سعر أو عربون)
+            if (hasFinancials) ...[
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                decoration: BoxDecoration(
+                  color: Colors.teal.withValues(alpha: AppTheme.isDark(context) ? 0.14 : 0.07),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.teal.withValues(alpha: 0.35)),
+                ),
+                child: Wrap(
+                  spacing: 12,
+                  runSpacing: 4,
+                  children: [
+                    Text(
+                      'الإجمالي: ${totalPrice.toStringAsFixed(0)} ج',
+                      style: TextStyle(
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.bold,
+                        color: AppTheme.textPrimary(context),
+                      ),
+                    ),
+                    Text(
+                      'المدفوع: ${paidAmount.toStringAsFixed(0)} ج',
+                      style: TextStyle(
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.green.shade700,
+                      ),
+                    ),
+                    Text(
+                      'المتبقي: ${remainingAmount.toStringAsFixed(0)} ج',
+                      style: TextStyle(
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.bold,
+                        color: remainingAmount > 0 ? Colors.red.shade600 : Colors.green.shade700,
                       ),
                     ),
                   ],

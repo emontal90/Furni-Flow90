@@ -3,6 +3,7 @@ import 'package:intl/intl.dart' as intl;
 import '../components/app_logo.dart';
 import '../core/app_events.dart';
 import '../core/app_notification.dart';
+import '../core/app_settings_service.dart';
 import '../core/app_theme.dart';
 import '../core/db_helper.dart';
 import '../core/share_helper.dart';
@@ -193,7 +194,7 @@ class _UpholstererStatementScreenState
       final errorMsg = await ShareHelper.captureAndShareToWhatsApp(
         boundaryKey: _captureKey,
         fileNamePrefix: 'upholsterer_statement',
-        captionText: 'كشف حساب المنجد - معرض الألفي',
+        captionText: 'كشف حساب المنجد - ${AppSettingsService.showroomProfileNotifier.value.displayName}',
       );
 
       if (mounted && errorMsg != null) {
@@ -267,7 +268,7 @@ class _UpholstererStatementScreenState
     );
 
     return Scaffold(
-      backgroundColor: AppTheme.bgSurface,
+      backgroundColor: AppTheme.surfaceBg(context),
       appBar: AppBar(
         title: const AppBarTitleWithLogo(title: 'كشف حساب المنجد'),
         actions: [
@@ -341,7 +342,7 @@ class _UpholstererStatementScreenState
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: AppTheme.filterBarBg(context),
             boxShadow: [
               BoxShadow(
                 color: Colors.black.withValues(alpha: 0.08),
@@ -388,7 +389,7 @@ class _UpholstererStatementScreenState
     return Container(
       padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: AppTheme.filterBarBg(context),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.05),
@@ -655,7 +656,7 @@ class _StatementReceiptCard extends StatelessWidget {
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        'ملخص التسليم والاستلام • نظام الألفي',
+                        'ملخص التسليم والاستلام • ${AppSettingsService.showroomProfileNotifier.value.displayName}',
                         style: TextStyle(
                           color: Colors.white.withValues(alpha: 0.88),
                           fontSize: 11.5,
@@ -782,7 +783,7 @@ class _StatementReceiptCard extends StatelessWidget {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Text(
-                      'معرض الألفي • كشف حساب المنجد',
+                      '${AppSettingsService.showroomProfileNotifier.value.displayName} • كشف حساب المنجد',
                       style: TextStyle(
                         fontSize: 10.5,
                         color: Colors.grey.shade600,

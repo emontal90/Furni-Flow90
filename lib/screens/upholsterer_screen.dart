@@ -102,28 +102,7 @@ class _UpholstererScreenState extends State<UpholstererScreen> {
     }
   }
 
-  /// تفكيك قائمة القطع من السجل بدعم للتوافق مع البيانات القديمة
-  List<Map<String, dynamic>> _parseBatchPieces(Map<String, dynamic> batch) {
-    final rawJson = batch['pieces_json'];
-    if (rawJson != null && rawJson.toString().trim().isNotEmpty) {
-      try {
-        final List list = jsonDecode(rawJson.toString());
-        return list.map((e) => Map<String, dynamic>.from(e as Map)).toList();
-      } catch (_) {}
-    }
-    // بيانات قديمة بسجل قطعة واحدة
-    final int total = batch['total_sent'] is int ? batch['total_sent'] : (int.tryParse('${batch['total_sent']}') ?? 1);
-    final int rec = batch['received_qty'] is int ? batch['received_qty'] : (int.tryParse('${batch['received_qty']}') ?? 0);
-    return [
-      {
-        'name': batch['piece_name']?.toString() ?? 'قطعة',
-        'sent_qty': total,
-        'received_qty': rec,
-        'sent_date': batch['sent_date']?.toString() ?? '',
-        'received_date': batch['received_date']?.toString(),
-      }
-    ];
-  }
+
 
   /// قائمة الدفعات بعد تطبيق الفلاتر
   List<Map<String, dynamic>> get _filteredBatches {
@@ -402,7 +381,7 @@ class _UpholstererScreenState extends State<UpholstererScreen> {
       );
       if (existing.isNotEmpty) return;
 
-      final oldPieces = _parseBatchPieces(originalBatch);
+      final oldPieces = UpholstererStatementHelper.parseBatchPieces(originalBatch);
       final Map<String, List<Map<String, dynamic>>> groupedByDate = {};
       for (final p in oldPieces) {
         final int pRec = (p['received_qty'] as int?) ?? 0;
@@ -893,7 +872,7 @@ class _UpholstererScreenState extends State<UpholstererScreen> {
                         // دمج تلقائي مع الطلب القائم لنفس المنجد ونفس الصنف
                         isMerged = true;
                         batchId = targetBatch['id'] as int;
-                        final existingPieces = _parseBatchPieces(targetBatch);
+                        final existingPieces = UpholstererStatementHelper.parseBatchPieces(targetBatch);
 
                         for (final newP in validPieces) {
                           final String newName = (newP['name'] ?? '').toString().trim();
@@ -1012,7 +991,13 @@ class _UpholstererScreenState extends State<UpholstererScreen> {
           );
         },
       ),
-    );
+    ).whenComplete(() {
+      uphNameCtrl.dispose();
+      setsCtrl.dispose();
+      for (final p in pieceItems) {
+        p.dispose();
+      }
+    });
   }
 
   // ---------------------------------------------------------------------------
@@ -1025,7 +1010,7 @@ class _UpholstererScreenState extends State<UpholstererScreen> {
     int setsCount = (batch['sets_sent'] as int?) ?? 1;
     final setsCtrl = TextEditingController(text: '$setsCount');
 
-    final rawPieces = _parseBatchPieces(batch);
+    final rawPieces = UpholstererStatementHelper.parseBatchPieces(batch);
     final List<_EditBatchPieceItem> pieceItems = rawPieces.map((p) {
       final pName = (p['name'] ?? 'قطعة').toString();
       final int pSent = (p['sent_qty'] as int?) ?? 1;
@@ -1354,6 +1339,11 @@ class _UpholstererScreenState extends State<UpholstererScreen> {
                         return;
                       }
 
+                      final recalculatedSetsSent = CategoryStockHelper.computeBreakdownFromPieces(
+                        updatedPieces,
+                        qtyKey: 'sent_qty',
+                      ).completeSets;
+
                       final db = await DBHelper.instance.database;
                       await db.update(
                         'upholsterer_batches',
@@ -1362,7 +1352,7 @@ class _UpholstererScreenState extends State<UpholstererScreen> {
                           'piece_name': updatedPieces.isNotEmpty ? updatedPieces.first['name'] : batch['piece_name'],
                           'total_sent': totalSent,
                           'received_qty': totalRec,
-                          'sets_sent': setsCount,
+                          'sets_sent': recalculatedSetsSent,
                           'pieces_json': jsonEncode(updatedPieces),
                         },
                         where: 'id = ?',
@@ -1399,7 +1389,13 @@ class _UpholstererScreenState extends State<UpholstererScreen> {
           );
         },
       ),
-    );
+    ).whenComplete(() {
+      uphNameCtrl.dispose();
+      setsCtrl.dispose();
+      for (final p in pieceItems) {
+        p.dispose();
+      }
+    });
   }
 
   // ---------------------------------------------------------------------------
@@ -1407,7 +1403,7 @@ class _UpholstererScreenState extends State<UpholstererScreen> {
   // ---------------------------------------------------------------------------
   void _openReceiveModal(Map<String, dynamic> initialBatch) {
     final Map<String, dynamic> batch = Map<String, dynamic>.from(initialBatch);
-    List<Map<String, dynamic>> pieces = _parseBatchPieces(batch);
+    List<Map<String, dynamic>> pieces = UpholstererStatementHelper.parseBatchPieces(batch);
     int setsToReceive = 1;
 
     void updateSetsToReceiveCount() {
@@ -1879,19 +1875,26 @@ class _UpholstererScreenState extends State<UpholstererScreen> {
         where: 'id = ?',
         whereArgs: [batch['category_id']],
       );
-    } else {
-      await db.rawUpdate('UPDATE categories SET stock_qty = stock_qty + ? WHERE id = ?', [setsCount, batch['category_id']]);
-    }
 
-    final timeStr = intl.DateFormat('hh:mm a').format(DateTime.now());
-    await StockMovementHelper.logMovement(
-      categoryId: batch['category_id'],
-      categoryName: batch['category_name'],
-      movementType: 'upholsterer_in',
-      qtyChange: setsCount,
-      stockAfter: newStock,
-      notes: 'استلام عدد ($setsCount) طقم من المنجد: ${batch['upholsterer_name']} وإضافتها للمخزن مع قطعها (الساعة $timeStr)',
-    );
+      final piecesDelta = pieces.map((p) {
+        final bq = (p['base_qty'] as int?) ?? 1;
+        return {
+          'name': (p['name'] ?? '').toString().trim(),
+          'delta': setsCount * (bq > 0 ? bq : 1),
+        };
+      }).toList();
+
+      final timeStr = intl.DateFormat('hh:mm a').format(DateTime.now());
+      await StockMovementHelper.logMovement(
+        categoryId: batch['category_id'],
+        categoryName: batch['category_name'],
+        movementType: 'upholsterer_in',
+        qtyChange: setsCount,
+        stockAfter: newStock,
+        piecesDelta: piecesDelta,
+        notes: 'استلام عدد ($setsCount) طقم من المنجد: ${batch['upholsterer_name']} وإضافتها للمخزن مع قطعها (الساعة $timeStr)',
+      );
+    }
 
     AppEvents.instance.notifyAll();
 
@@ -1902,7 +1905,7 @@ class _UpholstererScreenState extends State<UpholstererScreen> {
       batch.clear();
       batch.addAll(fresh);
       pieces.clear();
-      pieces.addAll(_parseBatchPieces(fresh));
+      pieces.addAll(UpholstererStatementHelper.parseBatchPieces(fresh));
     } else {
       batch['sets_received'] = newSetsRec;
       batch['received_qty'] = newBatchRec;
@@ -2096,6 +2099,9 @@ class _UpholstererScreenState extends State<UpholstererScreen> {
       movementType: 'piece_add',
       qtyChange: qtyToReceive,
       stockAfter: currentCatStock,
+      piecesDelta: [
+        {'name': pName.trim(), 'delta': qtyToReceive},
+      ],
       notes: 'استلام عدد ($qtyToReceive) من قطعة ($pName) من المنجد: ${batch['upholsterer_name']} وإضافتها للمخزن (الساعة $timeStr)',
     );
 
@@ -2119,7 +2125,7 @@ class _UpholstererScreenState extends State<UpholstererScreen> {
       batch.clear();
       batch.addAll(fresh);
       pieces.clear();
-      pieces.addAll(_parseBatchPieces(fresh));
+      pieces.addAll(UpholstererStatementHelper.parseBatchPieces(fresh));
     } else {
       batch['sets_received'] = currentSetsRec;
       batch['received_qty'] = newBatchRec;
@@ -2204,7 +2210,7 @@ class _UpholstererScreenState extends State<UpholstererScreen> {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
             decoration: BoxDecoration(
-              color: Colors.white,
+              color: AppTheme.filterBarBg(context),
               boxShadow: [
                 BoxShadow(
                   color: Colors.black.withValues(alpha: 0.05),
@@ -2368,83 +2374,48 @@ class _UpholstererScreenState extends State<UpholstererScreen> {
                       final b = list[i];
                       final int batchId = (b['id'] as int?) ?? i;
                       final bool isExpanded = _expandedBatchIds.contains(batchId);
-                      final pieces = _parseBatchPieces(b);
+                      final pieces = UpholstererStatementHelper.parseBatchPieces(b);
                       final int sent = b['total_sent'] is int ? b['total_sent'] : (int.tryParse('${b['total_sent']}') ?? 0);
                       final int rec = b['received_qty'] is int ? b['received_qty'] : (int.tryParse('${b['received_qty']}') ?? 0);
                       final int rem = sent - rec;
                       final bool isDone = rem <= 0;
 
-                      // 1. حساب الأطقم المسلّمة والقطع الفردية المسلّمة
-                      int completeSetsSent = 0;
-                      int individualExcessSent = 0;
-                      // 2. حساب الأطقم المستلمة والقطع الفردية المستلمة
-                      int completeSetsRec = 0;
-                      int individualExcessRec = 0;
-                      // 3. حساب الأطقم المتبقية والقطع الفردية المتبقية
-                      int completeSetsRem = 0;
-                      int individualExcessRem = 0;
-                      final excessPiecesList = <Map<String, dynamic>>[];
+                      final sentBreak = pieces.isNotEmpty
+                          ? CategoryStockHelper.computeBreakdownFromPieces(pieces, qtyKey: 'sent_qty')
+                          : StockBreakdown(
+                              completeSets: (b['sets_sent'] as int?) ?? 1,
+                              individualPieces: 0,
+                              totalPieces: sent,
+                              excessPieces: const [],
+                            );
+                      final recBreak = pieces.isNotEmpty
+                          ? CategoryStockHelper.computeBreakdownFromPieces(pieces, qtyKey: 'received_qty')
+                          : StockBreakdown(
+                              completeSets: (b['sets_received'] as int?) ?? 0,
+                              individualPieces: 0,
+                              totalPieces: rec,
+                              excessPieces: const [],
+                            );
+                      final remBreak = pieces.isNotEmpty
+                          ? CategoryStockHelper.computeBreakdownFromPieces(
+                              pieces,
+                              qtyKey: 'sent_qty',
+                              subtractKey: 'received_qty',
+                            )
+                          : StockBreakdown(
+                              completeSets: math.max(0, sentBreak.completeSets - recBreak.completeSets),
+                              individualPieces: 0,
+                              totalPieces: math.max(0, rem),
+                              excessPieces: const [],
+                            );
 
-                      if (pieces.isNotEmpty) {
-                        // المسلّم
-                        completeSetsSent = pieces.map<int>((p) {
-                          final pSent = (p['sent_qty'] is int) ? p['sent_qty'] as int : (int.tryParse('${p['sent_qty']}') ?? 0);
-                          final pBase = (p['base_qty'] is int) ? p['base_qty'] as int : (int.tryParse('${p['base_qty']}') ?? 1);
-                          final safeBase = pBase > 0 ? pBase : 1;
-                          return pSent ~/ safeBase;
-                        }).reduce(math.min);
-                        for (final p in pieces) {
-                          final pSent = (p['sent_qty'] is int) ? p['sent_qty'] as int : (int.tryParse('${p['sent_qty']}') ?? 0);
-                          final pBase = (p['base_qty'] is int) ? p['base_qty'] as int : (int.tryParse('${p['base_qty']}') ?? 1);
-                          final safeBase = pBase > 0 ? pBase : 1;
-                          individualExcessSent += math.max(0, pSent - (completeSetsSent * safeBase));
-                        }
-
-                        // المستلم
-                        completeSetsRec = pieces.map<int>((p) {
-                          final pRec = (p['received_qty'] is int) ? p['received_qty'] as int : (int.tryParse('${p['received_qty']}') ?? 0);
-                          final pBase = (p['base_qty'] is int) ? p['base_qty'] as int : (int.tryParse('${p['base_qty']}') ?? 1);
-                          final safeBase = pBase > 0 ? pBase : 1;
-                          return pRec ~/ safeBase;
-                        }).reduce(math.min);
-                        for (final p in pieces) {
-                          final pRec = (p['received_qty'] is int) ? p['received_qty'] as int : (int.tryParse('${p['received_qty']}') ?? 0);
-                          final pBase = (p['base_qty'] is int) ? p['base_qty'] as int : (int.tryParse('${p['base_qty']}') ?? 1);
-                          final safeBase = pBase > 0 ? pBase : 1;
-                          individualExcessRec += math.max(0, pRec - (completeSetsRec * safeBase));
-                        }
-
-                        // المتبقي
-                        completeSetsRem = pieces.map<int>((p) {
-                          final pSent = (p['sent_qty'] is int) ? p['sent_qty'] as int : (int.tryParse('${p['sent_qty']}') ?? 0);
-                          final pRec = (p['received_qty'] is int) ? p['received_qty'] as int : (int.tryParse('${p['received_qty']}') ?? 0);
-                          final pRem = math.max(0, pSent - pRec);
-                          final pBase = (p['base_qty'] is int) ? p['base_qty'] as int : (int.tryParse('${p['base_qty']}') ?? 1);
-                          final safeBase = pBase > 0 ? pBase : 1;
-                          return pRem ~/ safeBase;
-                        }).reduce(math.min);
-
-                        for (final p in pieces) {
-                          final pSent = (p['sent_qty'] is int) ? p['sent_qty'] as int : (int.tryParse('${p['sent_qty']}') ?? 0);
-                          final pRec = (p['received_qty'] is int) ? p['received_qty'] as int : (int.tryParse('${p['received_qty']}') ?? 0);
-                          final pRem = math.max(0, pSent - pRec);
-                          final pBase = (p['base_qty'] is int) ? p['base_qty'] as int : (int.tryParse('${p['base_qty']}') ?? 1);
-                          final safeBase = pBase > 0 ? pBase : 1;
-                          final excess = pRem - (completeSetsRem * safeBase);
-                          if (excess > 0) {
-                            individualExcessRem += excess;
-                            excessPiecesList.add({
-                              'name': p['name'] ?? 'قطعة',
-                              'rem_qty': excess,
-                              'base_qty': safeBase,
-                            });
-                          }
-                        }
-                      } else {
-                        completeSetsSent = (b['sets_sent'] as int?) ?? 1;
-                        completeSetsRec = (b['sets_received'] as int?) ?? 0;
-                        completeSetsRem = math.max(0, completeSetsSent - completeSetsRec);
-                      }
+                      final int completeSetsSent = sentBreak.completeSets;
+                      final int individualExcessSent = sentBreak.individualPieces;
+                      final int completeSetsRec = recBreak.completeSets;
+                      final int individualExcessRec = recBreak.individualPieces;
+                      final int completeSetsRem = remBreak.completeSets;
+                      final int individualExcessRem = remBreak.individualPieces;
+                      final excessPiecesList = remBreak.excessPieces;
 
                       String formatCount(int sets, int individual) {
                         if (sets > 0 && individual > 0) {

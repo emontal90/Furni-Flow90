@@ -49,7 +49,7 @@ class AppUpdateService {
     'github-releases.githubusercontent.com',
   };
 
-  /// مقارنة رقمي إصدار بصيغة SemVer (مثلاً 1.0.17 أكبر من 1.0.16)
+  /// مقارنة رقمي إصدار بصيغة SemVer (مثلاً 1.1.0 أكبر من 1.0.28)
   static bool isVersionNewer(String remoteVersion, String currentVersion) {
     final remoteParts = _parseVersionParts(remoteVersion);
     final currentParts = _parseVersionParts(currentVersion);
@@ -74,7 +74,6 @@ class AppUpdateService {
   }
 
   /// التحقق من وجود إصدار أحدث على GitHub Releases
-  /// يعيد `null` إذا كان التطبيق محدثاً، أو إذا فشل الاتصال وكان [silent] = true
   static Future<AppUpdateInfo?> checkForUpdate({bool silent = true}) async {
     if (kIsWeb) return null;
 
@@ -82,7 +81,7 @@ class AppUpdateService {
     try {
       final uri = Uri.parse(_latestReleaseApi);
       final request = await client.getUrl(uri).timeout(const Duration(seconds: 10));
-      request.headers.set(HttpHeaders.userAgentHeader, 'El-Alfy-ERP-Android');
+      request.headers.set(HttpHeaders.userAgentHeader, 'MobilyaTrack-ERP-Android');
       request.headers.set(HttpHeaders.acceptHeader, 'application/vnd.github+json');
 
       final response = await request.close().timeout(const Duration(seconds: 12));
@@ -120,6 +119,7 @@ class AppUpdateService {
 
       if (assets is List) {
         Map<String, dynamic>? preferredAsset;
+        Map<String, dynamic>? legacyAsset;
         Map<String, dynamic>? fallbackApkAsset;
 
         for (final item in assets) {
@@ -129,14 +129,17 @@ class AppUpdateService {
           if (!url.startsWith(_allowedDownloadPrefix)) continue;
           if (!name.toLowerCase().endsWith('.apk')) continue;
 
-          if (name == 'el-Alfy-App.apk') {
+          if (name == 'MobilyaTrack-App.apk') {
             preferredAsset = item;
             break;
+          }
+          if (name == 'el-Alfy-App.apk') {
+            legacyAsset = item;
           }
           fallbackApkAsset ??= item;
         }
 
-        final chosen = preferredAsset ?? fallbackApkAsset;
+        final chosen = preferredAsset ?? legacyAsset ?? fallbackApkAsset;
         if (chosen != null) {
           downloadUrl = (chosen['browser_download_url'] ?? '').toString();
           final sizeVal = chosen['size'];
@@ -186,7 +189,6 @@ class AppUpdateService {
       await updatesDir.create(recursive: true);
     }
 
-    // تنظيف أي ملفات تحديث سابقة لتوفير المساحة
     await for (final entity in updatesDir.list()) {
       if (entity is File) {
         try {
@@ -195,17 +197,20 @@ class AppUpdateService {
       }
     }
 
-    final tmpFile = File('${updatesDir.path}/el-alfy-update.apk.tmp');
-    final finalFile = File('${updatesDir.path}/el-alfy-update.apk');
+    final tmpFile = File('${updatesDir.path}/mobilya-track-update.apk.tmp');
+    final finalFile = File('${updatesDir.path}/mobilya-track-update.apk');
 
     final client = HttpClient()..connectionTimeout = const Duration(seconds: 15);
     IOSink? sink;
 
     try {
+      try {
+        await _channel.invokeMethod<void>('acquireWakeLock');
+      } catch (_) {}
+
       Uri currentUri = Uri.parse(update.downloadUrl);
       HttpClientResponse? finalResponse;
 
-      // تتبع التحويلات يدوياً للتحقق من أن كل رابط تحويل ينتمي لنطاقات GitHub HTTPS الموثوقة فقط
       for (var hop = 0; hop < 6; hop++) {
         if (isCancelled?.call() == true) {
           throw Exception('تم إلغاء التنزيل.');
@@ -216,7 +221,7 @@ class AppUpdateService {
 
         final req = await client.getUrl(currentUri).timeout(const Duration(seconds: 15));
         req.followRedirects = false;
-        req.headers.set(HttpHeaders.userAgentHeader, 'El-Alfy-ERP-Android');
+        req.headers.set(HttpHeaders.userAgentHeader, 'MobilyaTrack-ERP-Android');
         final resp = await req.close().timeout(const Duration(seconds: 20));
 
         if (resp.isRedirect ||
@@ -263,7 +268,6 @@ class AppUpdateService {
       await sink.close();
       sink = null;
 
-      // التحقق من سلامة وحجم ملف الـ APK (يجب أن يبدأ بتوقيع ZIP/APK: PK\x03\x04)
       if (receivedBytes < 500 * 1024) {
         throw const FormatException('الملف الذي تم تنزيله غير مكتمل أو تالف.');
       }
@@ -299,6 +303,9 @@ class AppUpdateService {
       } catch (_) {}
       rethrow;
     } finally {
+      try {
+        await _channel.invokeMethod<void>('releaseWakeLock');
+      } catch (_) {}
       client.close(force: true);
     }
   }
@@ -324,4 +331,3 @@ class AppUpdateService {
     await _channel.invokeMethod<void>('openBrowserUrl', {'url': url});
   }
 }
-

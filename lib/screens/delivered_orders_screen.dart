@@ -264,7 +264,7 @@ class _DeliveredOrdersScreenState extends State<DeliveredOrdersScreen> {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
             decoration: BoxDecoration(
-              color: Colors.white,
+              color: AppTheme.filterBarBg(context),
               boxShadow: [
                 BoxShadow(
                   color: Colors.black.withValues(alpha: 0.05),

@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:math' as math;
 import 'package:intl/intl.dart' as intl;
+import 'category_stock_helper.dart';
 import 'db_helper.dart';
 
 class StockMovementHelper {
@@ -44,14 +45,16 @@ class StockMovementHelper {
     return raw;
   }
 
-  /// تسجيل حركة مخزن جديدة وتوثيق التاريخ والوقت بصيغة 12 ساعة بدقة
+  /// تسجيل حركة مخزن جديدة مع تخزين تفاصيل تغير القطع بشكل مهيكل (pieces_json)
+  /// بدلاً من الاعتماد الهش على Regex النصوص العربية عند حساب المخزون التاريخي
   static Future<void> logMovement({
     required int categoryId,
     required String categoryName,
-    required String movementType, // 'upholsterer_in', 'delivered_out', 'manual_add', 'manual_deduct', 'upholsterer_out'
+    required String movementType,
     required int qtyChange,
     required int stockAfter,
     required String notes,
+    List<Map<String, dynamic>>? piecesDelta,
   }) async {
     try {
       final db = await DBHelper.instance.database;
@@ -62,6 +65,9 @@ class StockMovementHelper {
         'movement_type': movementType,
         'qty_change': qtyChange,
         'stock_after': stockAfter,
+        'pieces_json': (piecesDelta != null && piecesDelta.isNotEmpty)
+            ? jsonEncode(piecesDelta)
+            : null,
         'notes': notes,
         'created_at': nowStr,
       });
@@ -109,6 +115,7 @@ class StockMovementHelper {
   }
 
   /// حساب حالة المخزن (الأطقم والقطع) كما كانت بنهاية تاريخ محدد
+  /// يستخدم `pieces_json` المهيكل أولاً، ويحتفظ بدعم `notes` للبيانات القديمة فقط
   static Future<List<Map<String, dynamic>>> getStockAtEndOfDate({
     required List<Map<String, dynamic>> currentCategories,
     required DateTime targetDate,
@@ -126,7 +133,6 @@ class StockMovementHelper {
       );
     }
 
-    // جمع الحركات التي حدثت بعد نهاية اليوم المحدد لعكس تأثيرها
     final movementsAfterTarget = <Map<String, dynamic>>[];
     for (final m in allMovements) {
       final String rawDate = (m['created_at'] ?? '').toString();
@@ -136,44 +142,50 @@ class StockMovementHelper {
       }
     }
 
-    // بناء قائمة الأصناف مع عكس الحركات اللاحقة للعودة للوراء
     final result = <Map<String, dynamic>>[];
 
     for (final cat in currentCategories) {
       final catId = cat['id'] as int;
-
-      List currentComps = [];
-      try {
-        currentComps = jsonDecode((cat['components_json'] ?? '[]').toString());
-      } catch (_) {}
+      final currentComps = CategoryStockHelper.parseComponents(cat['components_json']);
 
       final Map<String, int> pieceQuantities = {};
       final Map<String, int> pieceBaseQuantities = {};
 
       for (final c in currentComps) {
-        if (c is! Map) continue;
         final name = (c['name'] ?? '').toString().trim();
-        final int qty = (c['qty'] is int) ? c['qty'] as int : (int.tryParse('${c['qty']}') ?? 0);
-        final int baseQty = (c['base_qty'] is int) ? c['base_qty'] as int : (int.tryParse('${c['base_qty']}') ?? 1);
+        final int qty = CategoryStockHelper.parseInt(c['qty']);
+        final int baseQty = CategoryStockHelper.parseInt(c['base_qty'], fallback: 1);
         if (name.isNotEmpty) {
           pieceQuantities[name] = qty;
           pieceBaseQuantities[name] = baseQty > 0 ? baseQty : 1;
         }
       }
 
-      int catStockSets = (cat['stock_qty'] as int?) ?? 0;
-
-      // عكس الحركات اللاحقة للطقم الحالي من الأحدث إلى الأقدم
+      int catStockSets = CategoryStockHelper.parseInt(cat['stock_qty']);
       final catMovementsAfter = movementsAfterTarget.where((m) => m['category_id'] == catId).toList();
-      // لعكس العمليات التي تمت بعد التاريخ المحدد:
+
       for (final m in catMovementsAfter) {
         final type = (m['movement_type'] ?? '').toString();
-        final int change = (m['qty_change'] as int?) ?? 0;
+        final int change = CategoryStockHelper.parseInt(m['qty_change']);
         final notes = (m['notes'] ?? '').toString();
 
+        // 1. استخدام البيانات المهيكلة `pieces_json` إن وُجدت (دقيق 100% ومستقل عن النصوص)
+        final structuredPieces = CategoryStockHelper.parseComponents(m['pieces_json']);
+        if (structuredPieces.isNotEmpty) {
+          for (final sp in structuredPieces) {
+            final pName = (sp['name'] ?? '').toString().trim();
+            final delta = CategoryStockHelper.parseInt(sp['delta'], fallback: CategoryStockHelper.parseInt(sp['qty']));
+            if (pName.isNotEmpty && pieceQuantities.containsKey(pName) && delta != 0) {
+              // عكس التغيير: نطرح الدلتا المسجلة (إذا كانت موجبة تُخصم وإذا كانت سالبة تُضاف)
+              pieceQuantities[pName] = math.max(0, pieceQuantities[pName]! - delta);
+            }
+          }
+          continue;
+        }
+
+        // 2. التوافق مع السجلات القديمة التي لا تحتوي على pieces_json
         if (type == 'upholsterer_in' || type == 'manual_add') {
           catStockSets -= change;
-          // تم استلام طقم كامل بقطعه التأسيسية
           if (type == 'upholsterer_in') {
             for (final entry in pieceQuantities.entries) {
               final b = pieceBaseQuantities[entry.key] ?? 1;
@@ -181,11 +193,9 @@ class StockMovementHelper {
             }
           }
         } else if (type == 'manual_deduct') {
-          catStockSets -= change; // change is negative so subtracting adds back
-        } else if (type == 'delivered_out') {
-          // تم تسليم طقم أو قطع للعميل -> نعيدها للمخزن
           catStockSets -= change;
-          // استخراج تفاصيل القطع المسلمة من الملاحظات إن وجدت مثل [كنبة: 1، فوتيه: 2]
+        } else if (type == 'delivered_out') {
+          catStockSets -= change;
           final exp = RegExp(r'\[(.*?)\]');
           final match = exp.firstMatch(notes);
           if (match != null) {
@@ -202,7 +212,6 @@ class StockMovementHelper {
               }
             }
           } else {
-            // تسليم طقم كامل، نعيد القطع التأسيسية
             final absSets = change.abs() > 0 ? change.abs() : 1;
             for (final entry in pieceQuantities.entries) {
               final b = pieceBaseQuantities[entry.key] ?? 1;
@@ -210,7 +219,6 @@ class StockMovementHelper {
             }
           }
         } else if (type == 'piece_add') {
-          // قطعة مفردة تمت زيادتها أو استلامها -> نعكس بخصمها
           final exp = RegExp(r'قطعة \((.*?)\)');
           final match = exp.firstMatch(notes);
           if (match != null) {
@@ -220,7 +228,6 @@ class StockMovementHelper {
             }
           }
         } else if (type == 'piece_deduct') {
-          // قطعة مفردة تم إنقاصها -> نعكس بزيادتها
           final exp = RegExp(r'قطعة \((.*?)\)');
           final match = exp.firstMatch(notes);
           if (match != null) {
@@ -241,11 +248,7 @@ class StockMovementHelper {
       }).toList();
 
       if (reconstructedComps.isNotEmpty) {
-        catStockSets = reconstructedComps.map<int>((c) {
-          final q = c['qty'] as int;
-          final b = c['base_qty'] as int;
-          return q ~/ (b > 0 ? b : 1);
-        }).reduce(math.min);
+        catStockSets = CategoryStockHelper.computeBreakdownFromPieces(reconstructedComps).completeSets;
       }
       if (catStockSets < 0) catStockSets = 0;
 

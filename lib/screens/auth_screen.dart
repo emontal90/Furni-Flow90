@@ -1,12 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:local_auth/local_auth.dart';
 import '../components/app_logo.dart';
+import '../core/app_settings_service.dart';
 import '../core/app_theme.dart';
 import '../core/app_version.dart';
 import 'main_nav_screen.dart';
 
 class AuthScreen extends StatefulWidget {
-  const AuthScreen({super.key});
+  /// عند استخدامها كشاشة قفل بعد العودة من الخلفية، يتم استدعاء [onUnlocked] بدلاً من استبدال الصفحة
+  final VoidCallback? onUnlocked;
+
+  const AuthScreen({super.key, this.onUnlocked});
 
   @override
   State<AuthScreen> createState() => _AuthScreenState();
@@ -21,7 +25,6 @@ class _AuthScreenState extends State<AuthScreen> {
   @override
   void initState() {
     super.initState();
-    // تشغيل التحقق فوراً بمجرد رسم الشاشة الأولى بدون أي تأخير
     WidgetsBinding.instance.addPostFrameCallback((_) => _authenticate());
   }
 
@@ -33,6 +36,8 @@ class _AuthScreenState extends State<AuthScreen> {
       _statusMsg = 'جاري التحقق من الهوية...';
     });
 
+    final showroomName = AppSettingsService.showroomProfileNotifier.value.displayName;
+
     try {
       final bool canCheck = await _auth.canCheckBiometrics || await _auth.isDeviceSupported();
       if (!canCheck) {
@@ -41,7 +46,7 @@ class _AuthScreenState extends State<AuthScreen> {
       }
 
       final bool didAuthenticate = await _auth.authenticate(
-        localizedReason: 'قم بمسح بصمة الإصبع أو تأكيد قفل الشاشة للدخول إلى نظام الألفي',
+        localizedReason: 'قم بمسح بصمة الإصبع أو تأكيد قفل الشاشة للدخول إلى $showroomName',
         options: const AuthenticationOptions(
           biometricOnly: false,
           stickyAuth: true,
@@ -71,6 +76,10 @@ class _AuthScreenState extends State<AuthScreen> {
 
   void _goToHome() {
     if (!mounted) return;
+    if (widget.onUnlocked != null) {
+      widget.onUnlocked!();
+      return;
+    }
     Navigator.pushReplacement(
       context,
       PageRouteBuilder(
@@ -86,130 +95,139 @@ class _AuthScreenState extends State<AuthScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: Container(
-        width: double.infinity,
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [
-              AppTheme.primaryNavy,
-              Color(0xFF142844),
-              Color(0xFF0E1D33),
-            ],
-          ),
-        ),
-        child: SafeArea(
-          child: Center(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(28.0),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(14),
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: Colors.white.withValues(alpha: 0.06),
-                      border: Border.all(
-                        color: AppTheme.royalGold.withValues(alpha: 0.45),
-                        width: 2,
-                      ),
-                    ),
-                    child: const AppLogo(size: 108),
-                  ),
-                  const SizedBox(height: 24),
-                  const Text(
-                    'نظام الألفي لإدارة المعرض',
-                    style: TextStyle(
-                      color: AppTheme.royalGold,
-                      fontSize: 23,
-                      fontWeight: FontWeight.bold,
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    'إدارة الأثاث والمخازن والطلبيات • ${AppVersion.displayVersion}',
-                    style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.72),
-                      fontSize: 13,
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 36),
-
-                  // بطاقة حالة التحقق بالبصمة
-                  Container(
-                    width: double.infinity,
-                    constraints: const BoxConstraints(maxWidth: 360),
-                    padding: const EdgeInsets.all(20),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.08),
-                      borderRadius: BorderRadius.circular(18),
-                      border: Border.all(
-                        color: _authFailed
-                            ? Colors.orange.withValues(alpha: 0.6)
-                            : Colors.white.withValues(alpha: 0.14),
-                      ),
-                    ),
+    return PopScope(
+      canPop: false,
+      child: ValueListenableBuilder<ShowroomProfile>(
+        valueListenable: AppSettingsService.showroomProfileNotifier,
+        builder: (context, profile, _) {
+          return Scaffold(
+            body: Container(
+              width: double.infinity,
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    AppTheme.primaryNavy,
+                    Color(0xFF142844),
+                    Color(0xFF0E1D33),
+                  ],
+                ),
+              ),
+              child: SafeArea(
+                child: Center(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.all(28.0),
                     child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Icon(
-                          Icons.fingerprint_rounded,
-                          size: 56,
-                          color: _authFailed ? Colors.orangeAccent : AppTheme.royalGold,
+                        Container(
+                          padding: const EdgeInsets.all(14),
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: Colors.white.withValues(alpha: 0.06),
+                            border: Border.all(
+                              color: AppTheme.royalGold.withValues(alpha: 0.45),
+                              width: 2,
+                            ),
+                          ),
+                          child: const AppLogo(size: 108),
                         ),
-                        const SizedBox(height: 14),
+                        const SizedBox(height: 24),
                         Text(
-                          _statusMsg,
+                          profile.displayName,
                           style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 14,
-                            height: 1.5,
+                            color: AppTheme.royalGold,
+                            fontSize: 23,
+                            fontWeight: FontWeight.bold,
                           ),
                           textAlign: TextAlign.center,
                         ),
-                        const SizedBox(height: 20),
-                        SizedBox(
+                        const SizedBox(height: 6),
+                        Text(
+                          '${profile.displaySubtitle} • ${AppVersion.displayVersion}',
+                          style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.72),
+                            fontSize: 13,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                        const SizedBox(height: 36),
+                        Container(
                           width: double.infinity,
-                          child: ElevatedButton.icon(
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: AppTheme.royalGold,
-                              foregroundColor: AppTheme.primaryNavy,
-                              padding: const EdgeInsets.symmetric(vertical: 14),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
+                          constraints: const BoxConstraints(maxWidth: 360),
+                          padding: const EdgeInsets.all(20),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.08),
+                            borderRadius: BorderRadius.circular(18),
+                            border: Border.all(
+                              color: _authFailed
+                                  ? Colors.orange.withValues(alpha: 0.6)
+                                  : Colors.white.withValues(alpha: 0.14),
+                            ),
+                          ),
+                          child: Column(
+                            children: [
+                              Icon(
+                                Icons.fingerprint_rounded,
+                                size: 56,
+                                color: _authFailed ? Colors.orangeAccent : AppTheme.royalGold,
                               ),
-                            ),
-                            onPressed: _isAuthenticating ? null : _authenticate,
-                            icon: _isAuthenticating
-                                ? const SizedBox(
-                                    width: 20,
-                                    height: 20,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2.2,
-                                      color: AppTheme.primaryNavy,
+                              const SizedBox(height: 14),
+                              Text(
+                                _statusMsg,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 14,
+                                  height: 1.5,
+                                ),
+                                textAlign: TextAlign.center,
+                              ),
+                              const SizedBox(height: 20),
+                              SizedBox(
+                                width: double.infinity,
+                                child: ElevatedButton.icon(
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: AppTheme.royalGold,
+                                    foregroundColor: AppTheme.primaryNavy,
+                                    padding: const EdgeInsets.symmetric(vertical: 14),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(12),
                                     ),
-                                  )
-                                : const Icon(Icons.fingerprint_rounded, size: 24),
-                            label: Text(
-                              _isAuthenticating
-                                  ? 'بانتظار تأكيد البصمة...'
-                                  : (_authFailed ? 'إعادة المحاولة بالبصمة' : 'تأكيد الدخول بالبصمة'),
-                              style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
-                            ),
+                                  ),
+                                  onPressed: _isAuthenticating ? null : _authenticate,
+                                  icon: _isAuthenticating
+                                      ? const SizedBox(
+                                          width: 20,
+                                          height: 20,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2.2,
+                                            color: AppTheme.primaryNavy,
+                                          ),
+                                        )
+                                      : const Icon(Icons.fingerprint_rounded, size: 24),
+                                  label: Text(
+                                    _isAuthenticating
+                                        ? 'بانتظار تأكيد البصمة...'
+                                        : (_authFailed
+                                            ? 'إعادة المحاولة بالبصمة'
+                                            : 'تأكيد الدخول بالبصمة'),
+                                    style: const TextStyle(
+                                        fontSize: 15, fontWeight: FontWeight.bold),
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                       ],
                     ),
                   ),
-                ],
+                ),
               ),
             ),
-          ),
-        ),
+          );
+        },
       ),
     );
   }

@@ -1,4 +1,7 @@
+import 'dart:io';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import '../core/app_settings_service.dart';
 import '../core/app_theme.dart';
 
 class AppLogo extends StatelessWidget {
@@ -11,44 +14,71 @@ class AppLogo extends StatelessWidget {
     this.showBorder = true,
   });
 
-  @override
-  Widget build(BuildContext context) {
-    return Container(
+  Widget _buildDefaultLogo() {
+    return Image.asset(
+      'assets/images/app_logo.png',
       width: size,
       height: size,
-      decoration: BoxDecoration(
-        color: const Color(0xFFFBF9F4),
-        borderRadius: BorderRadius.circular(size * 0.22),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.14),
-            blurRadius: size * 0.1,
-            offset: Offset(0, size * 0.04),
-          ),
-        ],
-        border: showBorder
-            ? Border.all(color: AppTheme.royalGold, width: size > 50 ? 2.0 : 1.2)
-            : null,
+      fit: BoxFit.cover,
+      errorBuilder: (context, error, stackTrace) => Icon(
+        Icons.chair_rounded,
+        size: size * 0.6,
+        color: AppTheme.primaryNavy,
       ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(size * 0.22 - (showBorder ? 1.5 : 0)),
-        child: Image.asset(
-          'assets/images/app_logo.png',
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder<ShowroomProfile>(
+      valueListenable: AppSettingsService.showroomProfileNotifier,
+      builder: (context, profile, _) {
+        Widget logoWidget = _buildDefaultLogo();
+        if (!kIsWeb && profile.hasCustomLogo) {
+          final file = File(profile.customLogoPath!);
+          if (file.existsSync()) {
+            logoWidget = Image.file(
+              file,
+              width: size,
+              height: size,
+              fit: BoxFit.cover,
+              errorBuilder: (_, __, ___) => _buildDefaultLogo(),
+            );
+          }
+        }
+
+        return Container(
           width: size,
           height: size,
-          fit: BoxFit.cover,
-          errorBuilder: (context, error, stackTrace) => Icon(
-            Icons.chair_rounded,
-            size: size * 0.6,
-            color: AppTheme.primaryNavy,
+          decoration: BoxDecoration(
+            color: const Color(0xFFFBF9F4),
+            borderRadius: BorderRadius.circular(size * 0.22),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.14),
+                blurRadius: size * 0.1,
+                offset: Offset(0, size * 0.04),
+              ),
+            ],
+            border: showBorder
+                ? Border.all(
+                    color: AppTheme.royalGold,
+                    width: size > 50 ? 2.0 : 1.2,
+                  )
+                : null,
           ),
-        ),
-      ),
+          child: ClipRRect(
+            borderRadius:
+                BorderRadius.circular(size * 0.22 - (showBorder ? 1.5 : 0)),
+            child: logoWidget,
+          ),
+        );
+      },
     );
   }
 }
 
-/// عنوان موحد ومتجاوب في الهيدر يعرض الشعار واسم الصفحة كاملاً (ورقم الإصدار اختيارياً) بدون قص على أي هاتف
+/// عنوان موحد ومتجاوب في الهيدر يعرض الشعار (المخصص أو الافتراضي) واسم الصفحة كاملاً
 class AppBarTitleWithLogo extends StatelessWidget {
   final String title;
   final String? subtitle;
@@ -63,6 +93,7 @@ class AppBarTitleWithLogo extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final titleColor = AppTheme.textPrimary(context);
     return Row(
       children: [
         AppLogo(size: logoSize),
@@ -77,10 +108,10 @@ class AppBarTitleWithLogo extends StatelessWidget {
                 alignment: AlignmentDirectional.centerStart,
                 child: Text(
                   title,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontWeight: FontWeight.bold,
                     fontSize: 18,
-                    color: AppTheme.primaryNavy,
+                    color: titleColor,
                   ),
                   maxLines: 1,
                 ),
@@ -94,7 +125,7 @@ class AppBarTitleWithLogo extends StatelessWidget {
                     style: TextStyle(
                       fontSize: 11,
                       fontWeight: FontWeight.w600,
-                      color: AppTheme.primaryNavy.withValues(alpha: 0.68),
+                      color: titleColor.withValues(alpha: 0.72),
                     ),
                     maxLines: 1,
                   ),
@@ -106,4 +137,3 @@ class AppBarTitleWithLogo extends StatelessWidget {
     );
   }
 }
-

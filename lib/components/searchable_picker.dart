@@ -104,12 +104,12 @@ class SearchableSelectFormField<T> extends StatelessWidget {
             children: [
               Icon(Icons.search, size: 18, color: Colors.grey.shade500),
               const SizedBox(width: 2),
-              const Icon(Icons.arrow_drop_down, color: AppTheme.primaryNavy),
+              Icon(Icons.arrow_drop_down, color: AppTheme.accentOnSurface(context)),
               const SizedBox(width: 8),
             ],
           ),
           filled: true,
-          fillColor: enabled ? Colors.white : Colors.grey.shade100,
+          fillColor: enabled ? AppTheme.cardBg(context) : AppTheme.subtleBg(context),
           border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
           contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
         ),
@@ -124,10 +124,10 @@ class SearchableSelectFormField<T> extends StatelessWidget {
                   Expanded(
                     child: Text(
                       selected.label,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 14.5,
                         fontWeight: FontWeight.bold,
-                        color: AppTheme.primaryNavy,
+                        color: AppTheme.textPrimary(context),
                       ),
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -217,9 +217,9 @@ class _SearchablePickerSheetState<T> extends State<_SearchablePickerSheet<T>> {
         maxHeight: MediaQuery.of(context).size.height * 0.82,
       ),
       margin: EdgeInsets.only(bottom: bottomInset),
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
+      decoration: BoxDecoration(
+        color: AppTheme.cardBg(context),
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(22)),
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -244,7 +244,7 @@ class _SearchablePickerSheetState<T> extends State<_SearchablePickerSheet<T>> {
                 const SizedBox(width: 8),
                 Text(
                   widget.title,
-                  style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: AppTheme.primaryNavy),
+                  style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: AppTheme.textPrimary(context)),
                 ),
                 const SizedBox(width: 8),
                 Container(
@@ -290,7 +290,7 @@ class _SearchablePickerSheetState<T> extends State<_SearchablePickerSheet<T>> {
                       )
                     : null,
                 filled: true,
-                fillColor: const Color(0xFFF8FAFC),
+                fillColor: AppTheme.subtleBg(context),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
                   borderSide: BorderSide(color: Colors.grey.shade300),
@@ -377,7 +377,7 @@ class _SearchablePickerSheetState<T> extends State<_SearchablePickerSheet<T>> {
                                       style: TextStyle(
                                         fontSize: 14.5,
                                         fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
-                                        color: isSelected ? AppTheme.primaryNavy : Colors.black87,
+                                        color: isSelected ? AppTheme.accentOnSurface(context) : AppTheme.textBody(context),
                                       ),
                                     ),
                                     if (item.subtitle != null && item.subtitle!.isNotEmpty) ...[

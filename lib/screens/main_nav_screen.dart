@@ -6,6 +6,7 @@ import '../core/app_notification.dart';
 import '../core/app_settings_service.dart';
 import '../core/app_theme.dart';
 import '../core/app_update_service.dart';
+import 'auth_screen.dart';
 import 'dashboard_screen.dart';
 import 'waiting_orders_screen.dart';
 import 'delivered_orders_screen.dart';
@@ -19,9 +20,14 @@ class MainNavigationScreen extends StatefulWidget {
   State<MainNavigationScreen> createState() => _MainNavigationScreenState();
 }
 
-class _MainNavigationScreenState extends State<MainNavigationScreen> with WidgetsBindingObserver {
+class _MainNavigationScreenState extends State<MainNavigationScreen>
+    with WidgetsBindingObserver {
   int _currentIndex = 0;
-  final GlobalKey<ManagementHubScreenState> _managementHubKey = GlobalKey<ManagementHubScreenState>();
+  final GlobalKey<ManagementHubScreenState> _managementHubKey =
+      GlobalKey<ManagementHubScreenState>();
+
+  DateTime? _backgroundedAt;
+  bool _isLockOverlayOpen = false;
 
   late final List<Widget> _screens;
 
@@ -47,9 +53,42 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> with Widget
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) {
+    if (state == AppLifecycleState.paused || state == AppLifecycleState.hidden) {
+      _backgroundedAt ??= DateTime.now();
+    } else if (state == AppLifecycleState.resumed) {
+      _checkResumeBiometricLock();
       _checkForAppUpdatesSilently();
     }
+  }
+
+  /// إعادة طلب البصمة عند العودة للتطبيق من الخلفية بعد تجاوز مهلة الأمان
+  Future<void> _checkResumeBiometricLock() async {
+    final bgTime = _backgroundedAt;
+    _backgroundedAt = null;
+    if (bgTime == null || _isLockOverlayOpen || !mounted) return;
+
+    final enabled = await AppSettingsService.isBiometricEnabled();
+    if (!enabled || !mounted) return;
+
+    final timeoutSecs = await AppSettingsService.getBiometricTimeoutSeconds();
+    final elapsed = DateTime.now().difference(bgTime).inSeconds;
+    if (elapsed < timeoutSecs) return;
+
+    _isLockOverlayOpen = true;
+    await Navigator.of(context).push<void>(
+      PageRouteBuilder(
+        opaque: true,
+        transitionDuration: const Duration(milliseconds: 120),
+        pageBuilder: (lockCtx, _, __) => AuthScreen(
+          onUnlocked: () {
+            if (Navigator.of(lockCtx).canPop()) {
+              Navigator.of(lockCtx).pop();
+            }
+          },
+        ),
+      ),
+    );
+    _isLockOverlayOpen = false;
   }
 
   Future<void> _runStartupPrompts() async {
@@ -93,22 +132,30 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> with Widget
             Container(
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
-                color: AppTheme.primaryNavy.withValues(alpha: 0.1),
+                color: AppTheme.primaryNavy.withValues(alpha: 0.12),
                 shape: BoxShape.circle,
               ),
-              child: const Icon(Icons.fingerprint_rounded, color: AppTheme.primaryNavy, size: 28),
+              child: Icon(
+                Icons.fingerprint_rounded,
+                color: AppTheme.accentOnSurface(dCtx),
+                size: 28,
+              ),
             ),
             const SizedBox(width: 10),
-            const Expanded(
+            Expanded(
               child: Text(
                 'تأمين التطبيق بالبصمة',
-                style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: AppTheme.primaryNavy),
+                style: TextStyle(
+                  fontSize: 17,
+                  fontWeight: FontWeight.bold,
+                  color: AppTheme.textPrimary(dCtx),
+                ),
               ),
             ),
           ],
         ),
         content: const Text(
-          'مرحباً بك! هل ترغب في تفعيل الحماية ببصمة الإصبع عند فتح البرنامج لحماية بيانات المعرض والعملاء؟\n\nيمكنك تعديل هذا الإعداد في أي وقت من صفحة الإعدادات.',
+          'مرحباً بك! هل ترغب في تفعيل الحماية ببصمة الإصبع عند فتح البرنامج وعند العودة من الخلفية لحماية بيانات المعرض والعملاء؟\n\nيمكنك تعديل هذا الإعداد في أي وقت من صفحة الإعدادات.',
           style: TextStyle(fontSize: 14, height: 1.5),
         ),
         actions: [
@@ -117,7 +164,10 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> with Widget
               await AppSettingsService.markBiometricPrompted();
               if (dCtx.mounted) Navigator.pop(dCtx);
             },
-            child: const Text('الإعداد لاحقاً', style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold)),
+            child: const Text(
+              'الإعداد لاحقاً',
+              style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold),
+            ),
           ),
           ElevatedButton.icon(
             style: ElevatedButton.styleFrom(
@@ -130,7 +180,10 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> with Widget
                 final auth = LocalAuthentication();
                 final didAuth = await auth.authenticate(
                   localizedReason: 'قم بتأكيد بصمة الإصبع لتفعيل الحماية',
-                  options: const AuthenticationOptions(biometricOnly: false, stickyAuth: true),
+                  options: const AuthenticationOptions(
+                    biometricOnly: false,
+                    stickyAuth: true,
+                  ),
                 );
                 if (didAuth) {
                   await AppSettingsService.setBiometricEnabled(true);
@@ -167,7 +220,6 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> with Widget
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      // استخدام IndexedStack للحفاظ على الشاشات في الذاكرة وتسريع التنقل اللحظي بدون أي تأخير أو إعادة تحميل
       body: IndexedStack(
         index: _currentIndex,
         children: _screens,
@@ -178,10 +230,12 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> with Widget
               backgroundColor: AppTheme.primaryNavy,
               foregroundColor: AppTheme.royalGold,
               onPressed: () async {
-                final res = await Navigator.push(context, MaterialPageRoute(builder: (_) => const NewOrderScreen()));
+                final res = await Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const NewOrderScreen()),
+                );
                 if (res == true) {
                   AppEvents.instance.notifyAll();
-                  // الانتقال التلقائي المباشر إلى صفحة قائمة الانتظار بعد إدخال طلب عميل جديد
                   setState(() {
                     _currentIndex = 1;
                   });
@@ -193,7 +247,6 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> with Widget
       bottomNavigationBar: NavigationBar(
         selectedIndex: _currentIndex,
         onDestinationSelected: (idx) {
-          // تنقل فوري سلس بدون تشغيل استعلامات غير ضرورية
           setState(() => _currentIndex = idx);
         },
         destinations: const [

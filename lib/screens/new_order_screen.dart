@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart' as intl;
 import '../components/app_logo.dart';
 import '../components/searchable_picker.dart';
+import '../components/secondary_category_picker.dart';
 import '../core/app_events.dart';
 import '../core/app_notification.dart';
 import '../core/app_theme.dart';
@@ -31,13 +32,7 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
   List<Map<String, dynamic>> get _otherCategories =>
       _categories.where((c) => c['id'] != _selectedCategoryId).toList();
 
-  Map<String, dynamic>? get _secondaryCategory {
-    try {
-      return _otherCategories.firstWhere((c) => c['id'] == _secondaryCategoryId);
-    } catch (_) {
-      return null;
-    }
-  }
+
 
   Map<String, dynamic>? get _selectedCustomer {
     try {
@@ -56,6 +51,8 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
   }
 
   final _specsCtrl = TextEditingController();
+  final _totalPriceCtrl = TextEditingController();
+  final _paidAmountCtrl = TextEditingController();
   String _orderType = 'نمطي';
   DateTime _deliveryDate = DateTime.now().add(const Duration(days: 7));
 
@@ -63,6 +60,14 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
   void initState() {
     super.initState();
     _loadInitialData();
+  }
+
+  @override
+  void dispose() {
+    _specsCtrl.dispose();
+    _totalPriceCtrl.dispose();
+    _paidAmountCtrl.dispose();
+    super.dispose();
   }
 
   Future<void> _loadInitialData() async {
@@ -107,63 +112,6 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
         }),
         ...preservedCrossPieces,
       ];
-    });
-  }
-
-  List<Map<String, dynamic>> _parseCategoryPieces(Map<String, dynamic> cat) {
-    List decoded = [];
-    try {
-      final raw = jsonDecode((cat['components_json'] ?? '[]').toString());
-      if (raw is List) decoded = raw;
-    } catch (_) {}
-    return decoded.whereType<Map>().map((e) {
-      final int stockQty = (e['qty'] is int)
-          ? e['qty'] as int
-          : (int.tryParse(e['qty']?.toString() ?? '0') ?? 0);
-      return {
-        'name': (e['name'] ?? '').toString(),
-        'stock_qty': stockQty,
-      };
-    }).where((e) => (e['name'] as String).isNotEmpty).toList();
-  }
-
-  int _getSecondaryPieceQty(int secCatId, String pieceName) {
-    for (final c in _editableComponents) {
-      if (c['source_category_id'] == secCatId &&
-          c['source_piece_name'] == pieceName) {
-        return (c['qty'] as int?) ?? 0;
-      }
-    }
-    return 0;
-  }
-
-  void _setSecondaryPieceQty(Map<String, dynamic> secCat, String pieceName, int newQty) {
-    final int secCatId = secCat['id'] as int;
-    final String secCatName = (secCat['name'] ?? '').toString();
-    setState(() {
-      final existingIdx = _editableComponents.indexWhere(
-        (c) => c['source_category_id'] == secCatId && c['source_piece_name'] == pieceName,
-      );
-      if (newQty <= 0) {
-        if (existingIdx != -1) {
-          _editableComponents.removeAt(existingIdx);
-        }
-      } else if (existingIdx != -1) {
-        _editableComponents[existingIdx]['qty'] = newQty;
-        _editableComponents[existingIdx]['selected'] = true;
-      } else {
-        _editableComponents.add({
-          'name': '$pieceName ($secCatName)',
-          'source_piece_name': pieceName,
-          'source_category_id': secCatId,
-          'source_category_name': secCatName,
-          'base_qty': 0,
-          'qty': newQty,
-          'original_qty': 0,
-          'selected': true,
-          'is_custom': true,
-        });
-      }
     });
   }
 
@@ -296,7 +244,7 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
           ],
         ),
       ),
-    );
+    ).whenComplete(() => nameCtrl.dispose());
   }
 
   // رسالة تأكيد أنيقة لإزالة الصنف من نموذج الطلب دون المساس بالمخزن
@@ -397,6 +345,8 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
       'delivery_date': intl.DateFormat('yyyy-MM-dd').format(_deliveryDate),
       'order_type': _orderType,
       'sets_count': summary.sets,
+      'total_price': double.tryParse(_totalPriceCtrl.text.trim()) ?? 0.0,
+      'paid_amount': double.tryParse(_paidAmountCtrl.text.trim()) ?? 0.0,
       'status': 'waiting',
       'created_at': intl.DateFormat('yyyy-MM-dd HH:mm').format(DateTime.now()),
     });
@@ -884,224 +834,34 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
                     ),
                     const SizedBox(height: 12),
 
-                    // فاصل أنيق وبسيط قبل قسم إضافة قطع من طقم آخر
-                    Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 8),
-                      child: Row(
-                        children: [
-                          Expanded(child: Divider(color: Colors.teal.shade200, thickness: 1)),
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 10),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(Icons.style_outlined, size: 16, color: Colors.teal.shade700),
-                                const SizedBox(width: 5),
-                                Text(
-                                  'قطع إضافية من أطقم أخرى',
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.bold,
-                                    color: Colors.teal.shade800,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          Expanded(child: Divider(color: Colors.teal.shade200, thickness: 1)),
-                        ],
-                      ),
-                    ),
-
-                    // اختيار إضافة قطع فردية من طقم آخر بخلفية مميزة
-                    Container(
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: _addFromOtherCategory
-                              ? [const Color(0xFFE6FFFA), const Color(0xFFCCFBF1)]
-                              : [const Color(0xFFF0FDFA), const Color(0xFFF8FAFC)],
-                          begin: Alignment.topRight,
-                          end: Alignment.bottomLeft,
-                        ),
-                        borderRadius: BorderRadius.circular(14),
-                        border: Border.all(
-                          color: _addFromOtherCategory
-                              ? const Color(0xFF0D9488)
-                              : const Color(0xFF99F6E4),
-                          width: 1.5,
-                        ),
-                        boxShadow: [
-                          BoxShadow(
-                            color: const Color(0xFF0D9488).withValues(alpha: _addFromOtherCategory ? 0.12 : 0.05),
-                            blurRadius: 6,
-                            offset: const Offset(0, 2),
-                          ),
-                        ],
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          CheckboxListTile(
-                            value: _addFromOtherCategory,
-                            activeColor: const Color(0xFF0F766E),
-                            checkColor: Colors.white,
-                            contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
-                            title: const Row(
-                              children: [
-                                Icon(Icons.add_shopping_cart_rounded, size: 20, color: Color(0xFF0F766E)),
-                                SizedBox(width: 8),
-                                Text(
-                                  'إضافة قطع من طقم آخر',
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 14.5,
-                                    color: Color(0xFF0F766E),
-                                  ),
-                                ),
-                              ],
-                            ),
-                            subtitle: const Padding(
-                              padding: EdgeInsets.only(top: 4),
-                              child: Text(
-                                'مثل إضافة كنبة فرداني من صنف آخر ليتم خصمها من مخزونه عند التسليم',
-                                style: TextStyle(fontSize: 11.5, color: Color(0xFF115E59)),
-                              ),
-                            ),
-                            onChanged: (checked) {
-                              setState(() {
-                                _addFromOtherCategory = checked ?? false;
-                                if (!_addFromOtherCategory) {
-                                  _secondaryCategoryId = null;
-                                  _editableComponents.removeWhere(
-                                    (c) => c['source_category_id'] != null,
-                                  );
-                                }
-                              });
-                            },
-                          ),
-                          if (_addFromOtherCategory)
-                            Padding(
-                              padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-                              child: _otherCategories.isEmpty
-                                  ? const Text(
-                                      'لا توجد أصناف أخرى مسجلة حالياً.',
-                                      style: TextStyle(color: Colors.grey, fontSize: 12.5),
-                                    )
-                                  : Column(
-                                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                                      children: [
-                                        SearchableSelectFormField<int>(
-                                          key: ValueKey('sec_cat_${_secondaryCategoryId ?? 'none'}'),
-                                          value: _secondaryCategoryId,
-                                          labelText: 'اختر الطقم الآخر *',
-                                          hintText: 'ابحث عن الطقم الآخر لاختيار قطع منه',
-                                          searchHint: 'اكتب اسم الطقم للتصفية...',
-                                          prefixIcon: const Icon(Icons.weekend_outlined, color: AppTheme.primaryNavy),
-                                          items: _otherCategories.map((c) {
-                                            return SearchableSelectItem<int>(
-                                              value: c['id'] as int,
-                                              label: (c['name'] ?? '').toString(),
-                                              subtitle: 'رصيد المعرض: ${CategoryStockHelper.formatStockSummary(c)}',
-                                              badge: CategoryStockHelper.formatStockSummary(c),
-                                              searchKey: (c['name'] ?? '').toString(),
-                                            );
-                                          }).toList(),
-                                          onChanged: (val) => setState(() => _secondaryCategoryId = val),
-                                        ),
-                                        if (_secondaryCategory != null) ...[
-                                          const SizedBox(height: 10),
-                                          const Text(
-                                            'اختر القطع المطلوبة من هذا الطقم:',
-                                            style: TextStyle(
-                                              fontSize: 12.5,
-                                              fontWeight: FontWeight.bold,
-                                              color: AppTheme.primaryNavy,
-                                            ),
-                                          ),
-                                          const SizedBox(height: 6),
-                                          ..._parseCategoryPieces(_secondaryCategory!).map((p) {
-                                            final String pName = p['name'] as String;
-                                            final int stockQ = p['stock_qty'] as int;
-                                            final int secId = _secondaryCategory!['id'] as int;
-                                            final int curQ = _getSecondaryPieceQty(secId, pName);
-
-                                            return Container(
-                                              margin: const EdgeInsets.symmetric(vertical: 3),
-                                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                                              decoration: BoxDecoration(
-                                                color: curQ > 0 ? Colors.white : Colors.white.withValues(alpha: 0.7),
-                                                borderRadius: BorderRadius.circular(10),
-                                                border: Border.all(
-                                                  color: curQ > 0 ? Colors.teal.shade400 : Colors.grey.shade300,
-                                                ),
-                                              ),
-                                              child: Row(
-                                                children: [
-                                                  Expanded(
-                                                    child: Column(
-                                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                                      children: [
-                                                        Text(
-                                                          pName,
-                                                          style: const TextStyle(
-                                                            fontWeight: FontWeight.bold,
-                                                            fontSize: 13.5,
-                                                          ),
-                                                        ),
-                                                        Text(
-                                                          'متاح بالمخزن: $stockQ قطعة',
-                                                          style: TextStyle(
-                                                            fontSize: 11,
-                                                            color: Colors.grey.shade700,
-                                                          ),
-                                                        ),
-                                                      ],
-                                                    ),
-                                                  ),
-                                                  IconButton(
-                                                    padding: EdgeInsets.zero,
-                                                    constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-                                                    icon: Icon(
-                                                      Icons.remove_circle_outline,
-                                                      color: curQ > 0 ? Colors.red.shade700 : Colors.grey,
-                                                      size: 22,
-                                                    ),
-                                                    onPressed: curQ > 0
-                                                        ? () => _setSecondaryPieceQty(_secondaryCategory!, pName, curQ - 1)
-                                                        : null,
-                                                  ),
-                                                  Container(
-                                                    constraints: const BoxConstraints(minWidth: 28),
-                                                    alignment: Alignment.center,
-                                                    child: Text(
-                                                      '$curQ',
-                                                      style: const TextStyle(
-                                                        fontWeight: FontWeight.w900,
-                                                        fontSize: 15,
-                                                        color: AppTheme.primaryNavy,
-                                                      ),
-                                                    ),
-                                                  ),
-                                                  IconButton(
-                                                    padding: EdgeInsets.zero,
-                                                    constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-                                                    icon: Icon(
-                                                      Icons.add_circle_outline,
-                                                      color: Colors.green.shade700,
-                                                      size: 22,
-                                                    ),
-                                                    onPressed: () => _setSecondaryPieceQty(_secondaryCategory!, pName, curQ + 1),
-                                                  ),
-                                                ],
-                                              ),
-                                            );
-                                          }),
-                                        ],
-                                      ],
-                                    ),
-                            ),
-                        ],
-                      ),
+                    SecondaryCategoryPickerSection(
+                      enabled: _addFromOtherCategory,
+                      onToggleEnabled: (checked) {
+                        setState(() {
+                          _addFromOtherCategory = checked;
+                          if (!_addFromOtherCategory) {
+                            _secondaryCategoryId = null;
+                            _editableComponents.removeWhere(
+                              (c) => c['source_category_id'] != null,
+                            );
+                          }
+                        });
+                      },
+                      otherCategories: _otherCategories,
+                      selectedSecondaryCategoryId: _secondaryCategoryId,
+                      onSecondaryCategoryChanged: (val) =>
+                          setState(() => _secondaryCategoryId = val),
+                      editableComponents: _editableComponents,
+                      onPieceQtyChanged: (secCat, pieceName, newQty) {
+                        setState(() {
+                          SecondaryCategoryPickerSection.applySecondaryPieceQty(
+                            editableComponents: _editableComponents,
+                            secCat: secCat,
+                            pieceName: pieceName,
+                            newQty: newQty,
+                          );
+                        });
+                      },
                     ),
                   ],
                 ),
@@ -1118,6 +878,36 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
               hintText: 'مثال: قماش كتان بيج، تنجيد كابوتنيه، أرجل ستانلس...',
               prefixIcon: Icon(Icons.description),
             ),
+          ),
+          const SizedBox(height: 12),
+
+          // 4.5. البيانات المالية الاختيارية (السعر الإجمالي والعربون)
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _totalPriceCtrl,
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  decoration: const InputDecoration(
+                    labelText: 'السعر الإجمالي (اختياري)',
+                    hintText: '0',
+                    prefixIcon: Icon(Icons.payments_outlined),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: TextField(
+                  controller: _paidAmountCtrl,
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  decoration: const InputDecoration(
+                    labelText: 'العربون المدفوع (اختياري)',
+                    hintText: '0',
+                    prefixIcon: Icon(Icons.account_balance_wallet_outlined),
+                  ),
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: 12),
 

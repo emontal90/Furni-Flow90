@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../core/app_theme.dart';
 
 class StatCard extends StatelessWidget {
   final String title;
@@ -19,17 +20,22 @@ class StatCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isCompact = MediaQuery.sizeOf(context).width < 380;
+    final isDark = AppTheme.isDark(context);
+    final effectiveColor = isDark && color == AppTheme.primaryNavy
+        ? AppTheme.royalGold
+        : color;
+
     return Card(
       elevation: 2,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
-        side: BorderSide(color: color.withValues(alpha: 0.22), width: 1.2),
+        side: BorderSide(color: effectiveColor.withValues(alpha: 0.28), width: 1.2),
       ),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: onTap,
-        splashColor: color.withValues(alpha: 0.12),
-        highlightColor: color.withValues(alpha: 0.06),
+        splashColor: effectiveColor.withValues(alpha: 0.12),
+        highlightColor: effectiveColor.withValues(alpha: 0.06),
         child: Padding(
           padding: EdgeInsets.symmetric(
             horizontal: isCompact ? 10.0 : 13.0,
@@ -39,26 +45,25 @@ class StatCard extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              // الصف العلوي: أيقونة القائمة + شارة اسم القائمة المميز بدلاً من "تقرير حي"
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Container(
                     padding: EdgeInsets.all(isCompact ? 5.5 : 7),
                     decoration: BoxDecoration(
-                      color: color.withValues(alpha: 0.12),
+                      color: effectiveColor.withValues(alpha: 0.14),
                       borderRadius: BorderRadius.circular(10),
                     ),
-                    child: Icon(icon, color: color, size: isCompact ? 18 : 22),
+                    child: Icon(icon, color: effectiveColor, size: isCompact ? 18 : 22),
                   ),
                   const SizedBox(width: 6),
                   Flexible(
                     child: Container(
                       padding: EdgeInsets.symmetric(horizontal: isCompact ? 6 : 8, vertical: 4),
                       decoration: BoxDecoration(
-                        color: color.withValues(alpha: 0.1),
+                        color: effectiveColor.withValues(alpha: 0.12),
                         borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: color.withValues(alpha: 0.25)),
+                        border: Border.all(color: effectiveColor.withValues(alpha: 0.28)),
                       ),
                       child: FittedBox(
                         fit: BoxFit.scaleDown,
@@ -69,13 +74,13 @@ class StatCard extends StatelessWidget {
                               title,
                               maxLines: 1,
                               style: TextStyle(
-                                color: color,
+                                color: effectiveColor,
                                 fontSize: isCompact ? 10.5 : 11,
                                 fontWeight: FontWeight.bold,
                               ),
                             ),
                             const SizedBox(width: 3),
-                            Icon(Icons.arrow_forward_ios_rounded, size: 9, color: color),
+                            Icon(Icons.arrow_forward_ios_rounded, size: 9, color: effectiveColor),
                           ],
                         ),
                       ),
@@ -83,8 +88,6 @@ class StatCard extends StatelessWidget {
                   ),
                 ],
               ),
-
-              // القيمة والبيان الرئيسي للرقم
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 2),
                 child: FittedBox(
@@ -96,13 +99,11 @@ class StatCard extends StatelessWidget {
                     style: TextStyle(
                       fontSize: isCompact ? 16.5 : 18,
                       fontWeight: FontWeight.w900,
-                      color: color,
+                      color: effectiveColor,
                     ),
                   ),
                 ),
               ),
-
-              // مؤشر تفاعلي للتنقل السريع
               Row(
                 children: [
                   Flexible(
@@ -112,13 +113,13 @@ class StatCard extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                         fontSize: 10,
-                        color: Colors.grey.shade600,
+                        color: AppTheme.textMuted(context),
                         fontWeight: FontWeight.w500,
                       ),
                     ),
                   ),
                   const SizedBox(width: 3),
-                  Icon(Icons.touch_app_rounded, size: 13, color: color.withValues(alpha: 0.8)),
+                  Icon(Icons.touch_app_rounded, size: 13, color: effectiveColor.withValues(alpha: 0.85)),
                 ],
               ),
             ],
@@ -129,13 +130,13 @@ class StatCard extends StatelessWidget {
   }
 }
 
-/// كارت إحصائي مقسوم لنصفين (نصف للنمطي ونصف للأوردر)
+/// كارت إحصائي مقسوم لنصفين (نصف للنمطي ونصف للأوردر، أو أطقم وفردي)
 class SplitStatCard extends StatelessWidget {
   final String title;
   final IconData icon;
   final Color color;
-  final int standardCount; // القيمة الأولى (نمطي / أطقم)
-  final int customCount;   // القيمة الثانية (أوردر / فردي)
+  final int standardCount;
+  final int customCount;
   final String firstLabel;
   final String secondLabel;
   final String? footerText;
@@ -158,17 +159,22 @@ class SplitStatCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final total = standardCount + customCount;
     final isCompact = MediaQuery.sizeOf(context).width < 380;
+    final isDark = AppTheme.isDark(context);
+    final effectiveColor = isDark && color == AppTheme.primaryNavy
+        ? AppTheme.royalGold
+        : color;
+
     return Card(
       elevation: 2,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
-        side: BorderSide(color: color.withValues(alpha: 0.22), width: 1.2),
+        side: BorderSide(color: effectiveColor.withValues(alpha: 0.28), width: 1.2),
       ),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: onTap,
-        splashColor: color.withValues(alpha: 0.12),
-        highlightColor: color.withValues(alpha: 0.06),
+        splashColor: effectiveColor.withValues(alpha: 0.12),
+        highlightColor: effectiveColor.withValues(alpha: 0.06),
         child: Padding(
           padding: EdgeInsets.symmetric(
             horizontal: isCompact ? 9.0 : 12.0,
@@ -178,26 +184,25 @@ class SplitStatCard extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              // الصف العلوي: الأيقونة + اسم القائمة المميز
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Container(
                     padding: EdgeInsets.all(isCompact ? 5 : 6),
                     decoration: BoxDecoration(
-                      color: color.withValues(alpha: 0.12),
+                      color: effectiveColor.withValues(alpha: 0.14),
                       borderRadius: BorderRadius.circular(10),
                     ),
-                    child: Icon(icon, color: color, size: isCompact ? 17 : 20),
+                    child: Icon(icon, color: effectiveColor, size: isCompact ? 17 : 20),
                   ),
                   const SizedBox(width: 6),
                   Flexible(
                     child: Container(
                       padding: EdgeInsets.symmetric(horizontal: isCompact ? 6 : 8, vertical: 3),
                       decoration: BoxDecoration(
-                        color: color.withValues(alpha: 0.1),
+                        color: effectiveColor.withValues(alpha: 0.12),
                         borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: color.withValues(alpha: 0.25)),
+                        border: Border.all(color: effectiveColor.withValues(alpha: 0.28)),
                       ),
                       child: FittedBox(
                         fit: BoxFit.scaleDown,
@@ -208,13 +213,13 @@ class SplitStatCard extends StatelessWidget {
                               title,
                               maxLines: 1,
                               style: TextStyle(
-                                color: color,
+                                color: effectiveColor,
                                 fontSize: isCompact ? 10.5 : 11,
                                 fontWeight: FontWeight.bold,
                               ),
                             ),
                             const SizedBox(width: 3),
-                            Icon(Icons.arrow_forward_ios_rounded, size: 9, color: color),
+                            Icon(Icons.arrow_forward_ios_rounded, size: 9, color: effectiveColor),
                           ],
                         ),
                       ),
@@ -222,18 +227,15 @@ class SplitStatCard extends StatelessWidget {
                   ),
                 ],
               ),
-
-              // منتصف الكارت: مقسوم إلى نصفين (نصف للنمطي ونصف للأوردر)
               Container(
                 padding: const EdgeInsets.symmetric(vertical: 4),
                 decoration: BoxDecoration(
-                  color: color.withValues(alpha: 0.05),
+                  color: effectiveColor.withValues(alpha: isDark ? 0.10 : 0.05),
                   borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: color.withValues(alpha: 0.12)),
+                  border: Border.all(color: effectiveColor.withValues(alpha: 0.16)),
                 ),
                 child: Row(
                   children: [
-                    // النصف الأول
                     Expanded(
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
@@ -243,7 +245,7 @@ class SplitStatCard extends StatelessWidget {
                             style: TextStyle(
                               fontSize: 11,
                               fontWeight: FontWeight.bold,
-                              color: Colors.grey.shade700,
+                              color: AppTheme.textMuted(context),
                             ),
                           ),
                           const SizedBox(height: 1),
@@ -252,19 +254,17 @@ class SplitStatCard extends StatelessWidget {
                             style: TextStyle(
                               fontSize: 19,
                               fontWeight: FontWeight.w900,
-                              color: color,
+                              color: effectiveColor,
                             ),
                           ),
                         ],
                       ),
                     ),
-                    // فاصل رأسي بين النصفين
                     Container(
                       width: 1,
                       height: 32,
-                      color: color.withValues(alpha: 0.25),
+                      color: effectiveColor.withValues(alpha: 0.25),
                     ),
-                    // النصف الثاني
                     Expanded(
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
@@ -274,7 +274,7 @@ class SplitStatCard extends StatelessWidget {
                             style: TextStyle(
                               fontSize: 11,
                               fontWeight: FontWeight.bold,
-                              color: Colors.grey.shade700,
+                              color: AppTheme.textMuted(context),
                             ),
                           ),
                           const SizedBox(height: 1),
@@ -283,7 +283,7 @@ class SplitStatCard extends StatelessWidget {
                             style: TextStyle(
                               fontSize: 19,
                               fontWeight: FontWeight.w900,
-                              color: color,
+                              color: effectiveColor,
                             ),
                           ),
                         ],
@@ -292,8 +292,6 @@ class SplitStatCard extends StatelessWidget {
                   ],
                 ),
               ),
-
-              // الصف السفلي: الإجمالي ومؤشر الفتح
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
@@ -305,7 +303,7 @@ class SplitStatCard extends StatelessWidget {
                       style: TextStyle(
                         fontSize: 11,
                         fontWeight: FontWeight.bold,
-                        color: color,
+                        color: effectiveColor,
                       ),
                     ),
                   ),
@@ -317,12 +315,12 @@ class SplitStatCard extends StatelessWidget {
                         'فتح القائمة',
                         style: TextStyle(
                           fontSize: 10,
-                          color: Colors.grey.shade600,
+                          color: AppTheme.textMuted(context),
                           fontWeight: FontWeight.w500,
                         ),
                       ),
                       const SizedBox(width: 3),
-                      Icon(Icons.touch_app_rounded, size: 12, color: color.withValues(alpha: 0.8)),
+                      Icon(Icons.touch_app_rounded, size: 12, color: effectiveColor.withValues(alpha: 0.85)),
                     ],
                   ),
                 ],
@@ -330,6 +328,63 @@ class SplitStatCard extends StatelessWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// بطاقة إحصاء مضغوطة موحدة (بدلاً من تكرار _StatCard في شاشة النسخ الاحتياطي)
+class CompactStatCard extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String value;
+  final String subtitle;
+  final Color color;
+
+  const CompactStatCard({
+    super.key,
+    required this.icon,
+    required this.title,
+    required this.value,
+    required this.subtitle,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = AppTheme.isDark(context);
+    final effectiveColor = isDark && color == AppTheme.primaryNavy
+        ? AppTheme.royalGold
+        : color;
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppTheme.cardBg(context),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppTheme.borderColor(context)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: isDark ? 0.16 : 0.03),
+            blurRadius: 4,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, color: effectiveColor, size: 22),
+          const SizedBox(height: 6),
+          Text(title, style: TextStyle(fontSize: 11, color: AppTheme.textMuted(context))),
+          const SizedBox(height: 2),
+          Text(
+            value,
+            style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: effectiveColor),
+          ),
+          const SizedBox(height: 2),
+          Text(subtitle, style: TextStyle(fontSize: 10, color: AppTheme.textMuted(context))),
+        ],
       ),
     );
   }

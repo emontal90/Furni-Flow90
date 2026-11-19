@@ -1,7 +1,7 @@
 name: furniture_erp
-description: نظام إدارة معارض الموبيليا والمخازن 
+description: موبيليا تراك (MobilyaTrack) - نظام متكامل لإدارة معارض الموبيليا والمخازن وورش التنجيد
 publish_to: 'none'
-version: 1.0.28+29
+version: 1.1.2+32
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
@@ -29,3 +29,10 @@ flutter:
   uses-material-design: true
   assets:
     - assets/images/
+  fonts:
+    - family: NotoSansArabic
+      fonts:
+        - asset: assets/fonts/NotoSansArabic-Regular.ttf
+          weight: 400
+        - asset: assets/fonts/NotoSansArabic-Bold.ttf
+          weight: 700
