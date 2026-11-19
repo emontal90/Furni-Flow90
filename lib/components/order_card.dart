@@ -97,14 +97,18 @@ class OrderCard extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      '${order['customer_name']}',
-                      style: TextStyle(
-                        fontSize: collapsible ? 15 : 17,
-                        fontWeight: FontWeight.bold,
-                        color: AppTheme.textPrimary(context),
+                    FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: AlignmentDirectional.centerStart,
+                      child: Text(
+                        '${order['customer_name']}',
+                        maxLines: 1,
+                        style: TextStyle(
+                          fontSize: collapsible ? 15.5 : 17,
+                          fontWeight: FontWeight.bold,
+                          color: AppTheme.textPrimary(context),
+                        ),
                       ),
-                      overflow: TextOverflow.ellipsis,
                     ),
                     if (collapsible) ...[
                       const SizedBox(height: 3),
@@ -317,10 +321,10 @@ class OrderCard extends StatelessWidget {
                   return Container(
                     padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
                     decoration: BoxDecoration(
-                      color: pieceCount > 0 ? Colors.blue.shade50 : Colors.grey.shade100,
+                      color: pieceCount > 0 ? AppTheme.infoBg(context) : AppTheme.subtleBg(context),
                       borderRadius: BorderRadius.circular(8),
                       border: Border.all(
-                        color: pieceCount > 0 ? Colors.blue.shade200 : Colors.grey.shade300,
+                        color: pieceCount > 0 ? AppTheme.infoBorder(context) : AppTheme.borderColor(context),
                       ),
                     ),
                     child: Row(
@@ -329,7 +333,7 @@ class OrderCard extends StatelessWidget {
                         Icon(
                           Icons.chair_rounded,
                           size: 14,
-                          color: pieceCount > 0 ? AppTheme.primaryNavy : Colors.grey,
+                          color: pieceCount > 0 ? AppTheme.infoFg(context) : AppTheme.textMuted(context),
                         ),
                         const SizedBox(width: 5),
                         Text(
@@ -337,7 +341,7 @@ class OrderCard extends StatelessWidget {
                           style: TextStyle(
                             fontWeight: FontWeight.bold,
                             fontSize: 12.5,
-                            color: pieceCount > 0 ? AppTheme.primaryNavy : Colors.grey.shade700,
+                            color: pieceCount > 0 ? AppTheme.infoFg(context) : AppTheme.textMuted(context),
                           ),
                         ),
                         const SizedBox(width: 6),
@@ -372,9 +376,9 @@ class OrderCard extends StatelessWidget {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                 decoration: BoxDecoration(
-                  color: Colors.amber.shade50,
+                  color: AppTheme.warningBg(context),
                   borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.amber.shade200),
+                  border: Border.all(color: AppTheme.warningBorder(context)),
                 ),
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -386,7 +390,7 @@ class OrderCard extends StatelessWidget {
                         'المواصفات: ${order['specs']}',
                         style: TextStyle(
                             fontSize: 12,
-                            color: Colors.amber.shade900,
+                            color: AppTheme.warningFg(context),
                             fontWeight: FontWeight.w600),
                       ),
                     ),

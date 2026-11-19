@@ -8,6 +8,7 @@ import '../core/app_events.dart';
 import '../core/app_notification.dart';
 import '../core/app_theme.dart';
 import '../core/db_helper.dart';
+import 'delivered_statement_screen.dart';
 
 class DeliveredOrdersScreen extends StatefulWidget {
   const DeliveredOrdersScreen({super.key});
@@ -256,7 +257,39 @@ class _DeliveredOrdersScreenState extends State<DeliveredOrdersScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const AppBarTitleWithLogo(title: 'سجل الأوردرات التي تم تسليمها'),
+        title: const AppBarTitleWithLogo(title: 'تم التسليم'),
+        actions: [
+          Padding(
+            padding: const EdgeInsetsDirectional.only(end: 10),
+            child: ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppTheme.primaryNavy,
+                foregroundColor: AppTheme.royalGold,
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                minimumSize: Size.zero,
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                elevation: 1,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
+              ),
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    fullscreenDialog: true,
+                    builder: (_) => const DeliveredStatementScreen(),
+                  ),
+                );
+              },
+              icon: const Icon(Icons.receipt_long_rounded, size: 17),
+              label: const Text(
+                'كشف حساب',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+              ),
+            ),
+          ),
+        ],
       ),
       body: Column(
         children: [

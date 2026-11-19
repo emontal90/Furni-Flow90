@@ -979,7 +979,7 @@ class _ShowroomStockTabState extends State<ShowroomStockTab> {
             color: isHistoricalMode ? (AppTheme.isDark(context) ? const Color(0xFF3A2A0A) : const Color(0xFFFFFBEB)) : AppTheme.cardBg(context),
             borderRadius: BorderRadius.circular(12),
             border: Border.all(
-              color: isHistoricalMode ? const Color(0xFFD97706) : Colors.grey.shade300,
+              color: isHistoricalMode ? AppTheme.warningBorder(context) : AppTheme.borderColor(context),
               width: isHistoricalMode ? 1.5 : 1.0,
             ),
             boxShadow: [
@@ -994,7 +994,7 @@ class _ShowroomStockTabState extends State<ShowroomStockTab> {
             children: [
               Icon(
                 isHistoricalMode ? Icons.history_toggle_off_rounded : Icons.calendar_month_rounded,
-                color: isHistoricalMode ? const Color(0xFFD97706) : AppTheme.primaryNavy,
+                color: isHistoricalMode ? AppTheme.warningFg(context) : AppTheme.accentOnSurface(context),
                 size: 20,
               ),
               const SizedBox(width: 8),
@@ -1011,7 +1011,7 @@ class _ShowroomStockTabState extends State<ShowroomStockTab> {
                         style: TextStyle(
                           fontSize: 11,
                           fontWeight: FontWeight.w600,
-                          color: isHistoricalMode ? const Color(0xFFB45309) : Colors.grey.shade700,
+                          color: isHistoricalMode ? AppTheme.warningFg(context) : AppTheme.textMuted(context),
                         ),
                       ),
                       const SizedBox(height: 1),
@@ -1020,7 +1020,7 @@ class _ShowroomStockTabState extends State<ShowroomStockTab> {
                         style: TextStyle(
                           fontSize: 13,
                           fontWeight: FontWeight.bold,
-                          color: isHistoricalMode ? const Color(0xFFB45309) : AppTheme.primaryNavy,
+                          color: isHistoricalMode ? AppTheme.warningFg(context) : AppTheme.textPrimary(context),
                         ),
                       ),
                     ],
@@ -1047,8 +1047,8 @@ class _ShowroomStockTabState extends State<ShowroomStockTab> {
               else
                 OutlinedButton.icon(
                   style: OutlinedButton.styleFrom(
-                    foregroundColor: AppTheme.primaryNavy,
-                    side: BorderSide(color: AppTheme.primaryNavy.withValues(alpha: 0.4)),
+                    foregroundColor: AppTheme.accentOnSurface(context),
+                    side: BorderSide(color: AppTheme.accentOnSurface(context).withValues(alpha: 0.55)),
                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                     visualDensity: VisualDensity.compact,
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
@@ -1160,25 +1160,19 @@ class _ShowroomStockTabState extends State<ShowroomStockTab> {
                               padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
                               decoration: BoxDecoration(
                                 gradient: LinearGradient(
-                                  colors: completeSets > 0
-                                      ? [AppTheme.primaryNavy, const Color(0xFF2B5282)]
-                                      : [Colors.grey.shade700, Colors.grey.shade600],
+                                  colors: AppTheme.setsAvatarGradient(context, hasValue: completeSets > 0),
                                 ),
                                 borderRadius: BorderRadius.circular(10),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: Colors.black.withValues(alpha: 0.1),
-                                    blurRadius: 3,
-                                    offset: const Offset(0, 1),
-                                  ),
-                                ],
+                                border: AppTheme.isDark(context)
+                                    ? Border.all(color: AppTheme.brightGold.withValues(alpha: 0.35))
+                                    : null,
                               ),
                               child: Column(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
                                   const Text(
                                     'الأطقم',
-                                    style: TextStyle(fontSize: 9.5, color: AppTheme.royalGold, fontWeight: FontWeight.bold),
+                                    style: TextStyle(fontSize: 9.5, color: AppTheme.brightGold, fontWeight: FontWeight.bold),
                                   ),
                                   Text(
                                     '$completeSets',
@@ -1209,18 +1203,9 @@ class _ShowroomStockTabState extends State<ShowroomStockTab> {
                                     padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
                                     decoration: BoxDecoration(
                                       gradient: LinearGradient(
-                                        colors: individualPiecesCount > 0
-                                            ? [const Color(0xFFD97706), const Color(0xFFB45309)]
-                                            : [Colors.blueGrey.shade800, Colors.blueGrey.shade700],
+                                        colors: AppTheme.individualAvatarGradient(context, hasValue: individualPiecesCount > 0),
                                       ),
                                       borderRadius: BorderRadius.circular(10),
-                                      boxShadow: [
-                                        BoxShadow(
-                                          color: Colors.black.withValues(alpha: 0.1),
-                                          blurRadius: 3,
-                                          offset: const Offset(0, 1),
-                                        ),
-                                      ],
                                     ),
                                     child: Column(
                                       mainAxisSize: MainAxisSize.min,
@@ -1241,61 +1226,70 @@ class _ShowroomStockTabState extends State<ShowroomStockTab> {
                             ),
                             const SizedBox(width: 10),
 
-                            // اسم الصنف وحالة التوفر + إجمالي القطع
+                            // اسم الصنف كاملاً بدون قص + حالة التوفر في سطر واحد محكم
                             Expanded(
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Text(
-                                    cat['name'],
-                                    style: const TextStyle(
-                                      fontSize: 15.5,
-                                      fontWeight: FontWeight.bold,
-                                      color: AppTheme.primaryNavy,
+                                  FittedBox(
+                                    fit: BoxFit.scaleDown,
+                                    alignment: AlignmentDirectional.centerStart,
+                                    child: Text(
+                                      (cat['name'] ?? '').toString(),
+                                      maxLines: 1,
+                                      style: TextStyle(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.bold,
+                                        color: AppTheme.textPrimary(context),
+                                      ),
                                     ),
-                                    overflow: TextOverflow.ellipsis,
                                   ),
-                                  const SizedBox(height: 3),
-                                  Wrap(
-                                    spacing: 6,
-                                    runSpacing: 3,
-                                    crossAxisAlignment: WrapCrossAlignment.center,
-                                    children: [
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                        decoration: BoxDecoration(
-                                          color: completeSets > 0
-                                              ? Colors.green.shade50
-                                              : (individualPiecesCount > 0 ? Colors.amber.shade50 : Colors.red.shade50),
-                                          borderRadius: BorderRadius.circular(6),
-                                          border: Border.all(
+                                  const SizedBox(height: 4),
+                                  FittedBox(
+                                    fit: BoxFit.scaleDown,
+                                    alignment: AlignmentDirectional.centerStart,
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                                          decoration: BoxDecoration(
                                             color: completeSets > 0
-                                                ? Colors.green.shade300
-                                                : (individualPiecesCount > 0 ? Colors.amber.shade300 : Colors.red.shade300),
+                                                ? AppTheme.successBg(context)
+                                                : (individualPiecesCount > 0 ? AppTheme.warningBg(context) : AppTheme.dangerBg(context)),
+                                            borderRadius: BorderRadius.circular(6),
+                                            border: Border.all(
+                                              color: completeSets > 0
+                                                  ? AppTheme.successBorder(context)
+                                                  : (individualPiecesCount > 0 ? AppTheme.warningBorder(context) : AppTheme.dangerBorder(context)),
+                                            ),
+                                          ),
+                                          child: Text(
+                                            completeSets > 0
+                                                ? 'جاهز: $completeSets طقم${individualPiecesCount > 0 ? " + $individualPiecesCount فردي" : ""}'
+                                                : (individualPiecesCount > 0 ? '$individualPiecesCount قطع فردية' : 'رصيد صفر'),
+                                            maxLines: 1,
+                                            style: TextStyle(
+                                              fontSize: 11,
+                                              fontWeight: FontWeight.bold,
+                                              color: completeSets > 0
+                                                  ? AppTheme.successFg(context)
+                                                  : (individualPiecesCount > 0 ? AppTheme.warningFg(context) : AppTheme.dangerFg(context)),
+                                            ),
                                           ),
                                         ),
-                                        child: Text(
-                                          completeSets > 0
-                                              ? 'جاهز ($completeSets طقم${individualPiecesCount > 0 ? " + $individualPiecesCount فردي" : ""})'
-                                              : (individualPiecesCount > 0 ? '$individualPiecesCount قطع فردية' : 'رصيد صفر'),
+                                        const SizedBox(width: 6),
+                                        Text(
+                                          '($totalStockPieces قطعة)',
+                                          maxLines: 1,
                                           style: TextStyle(
-                                            fontSize: 10.5,
+                                            fontSize: 11.5,
                                             fontWeight: FontWeight.bold,
-                                            color: completeSets > 0
-                                                ? Colors.green.shade800
-                                                : (individualPiecesCount > 0 ? Colors.amber.shade900 : Colors.red.shade800),
+                                            color: AppTheme.textMuted(context),
                                           ),
                                         ),
-                                      ),
-                                      Text(
-                                        '($totalStockPieces قطعة)',
-                                        style: TextStyle(
-                                          fontSize: 11,
-                                          fontWeight: FontWeight.bold,
-                                          color: Colors.brown.shade700,
-                                        ),
-                                      ),
-                                    ],
+                                      ],
+                                    ),
                                   ),
                                 ],
                               ),
@@ -1306,7 +1300,7 @@ class _ShowroomStockTabState extends State<ShowroomStockTab> {
                               isExpanded
                                   ? Icons.keyboard_arrow_up_rounded
                                   : Icons.keyboard_arrow_down_rounded,
-                              color: Colors.grey.shade600,
+                              color: AppTheme.textMuted(context),
                               size: 24,
                             ),
                           ],
@@ -1320,10 +1314,10 @@ class _ShowroomStockTabState extends State<ShowroomStockTab> {
 
                           Row(
                             children: [
-                              const Expanded(
+                              Expanded(
                                 child: Text(
                                   'قطع الطقم ورصيدها الفعلي بالمخزن:',
-                                  style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: AppTheme.primaryNavy),
+                                  style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: AppTheme.textPrimary(context)),
                                 ),
                               ),
                               const SizedBox(width: 8),
@@ -1357,10 +1351,10 @@ class _ShowroomStockTabState extends State<ShowroomStockTab> {
                                 return Container(
                                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                                   decoration: BoxDecoration(
-                                    color: pieceCount > 0 ? Colors.blue.shade50 : Colors.grey.shade100,
+                                    color: pieceCount > 0 ? AppTheme.infoBg(context) : AppTheme.subtleBg(context),
                                     borderRadius: BorderRadius.circular(10),
                                     border: Border.all(
-                                      color: pieceCount > 0 ? Colors.blue.shade200 : Colors.grey.shade300,
+                                      color: pieceCount > 0 ? AppTheme.infoBorder(context) : AppTheme.borderColor(context),
                                     ),
                                   ),
                                   child: Row(
@@ -1369,7 +1363,7 @@ class _ShowroomStockTabState extends State<ShowroomStockTab> {
                                       Icon(
                                         Icons.chair_rounded,
                                         size: 15,
-                                        color: pieceCount > 0 ? AppTheme.primaryNavy : Colors.grey,
+                                        color: pieceCount > 0 ? AppTheme.infoFg(context) : AppTheme.textMuted(context),
                                       ),
                                       const SizedBox(width: 6),
                                       Text(
@@ -1377,7 +1371,7 @@ class _ShowroomStockTabState extends State<ShowroomStockTab> {
                                         style: TextStyle(
                                           fontWeight: FontWeight.bold,
                                           fontSize: 13,
-                                          color: pieceCount > 0 ? AppTheme.primaryNavy : Colors.grey.shade700,
+                                          color: pieceCount > 0 ? AppTheme.infoFg(context) : AppTheme.textMuted(context),
                                         ),
                                       ),
                                       const SizedBox(width: 8),
@@ -1409,8 +1403,8 @@ class _ShowroomStockTabState extends State<ShowroomStockTab> {
                               Expanded(
                                 child: OutlinedButton.icon(
                                   style: OutlinedButton.styleFrom(
-                                    foregroundColor: AppTheme.primaryNavy,
-                                    side: const BorderSide(color: AppTheme.primaryNavy),
+                                    foregroundColor: AppTheme.accentOnSurface(context),
+                                    side: BorderSide(color: AppTheme.accentOnSurface(context)),
                                     padding: const EdgeInsets.symmetric(vertical: 10),
                                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                                   ),

@@ -254,7 +254,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
           NavigationDestination(icon: Icon(Icons.hourglass_top_rounded), label: 'الانتظار'),
           NavigationDestination(icon: Icon(Icons.check_circle_outline_rounded), label: 'تم التسليم'),
           NavigationDestination(icon: Icon(Icons.handyman_rounded), label: 'المنجد'),
-          NavigationDestination(icon: Icon(Icons.inventory_2_rounded), label: 'البيانات والمخزن'),
+          NavigationDestination(icon: Icon(Icons.inventory_2_rounded), label: 'المخزن'),
         ],
       ),
     );

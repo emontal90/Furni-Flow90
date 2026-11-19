@@ -1,7 +1,6 @@
 import 'dart:convert';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart' as intl;
 import 'package:sqflite/sqflite.dart';
 import '../components/app_logo.dart';
 import '../components/refreshable_empty_view.dart';
@@ -11,6 +10,7 @@ import '../core/app_notification.dart';
 import '../core/app_theme.dart';
 import '../core/category_stock_helper.dart';
 import '../core/db_helper.dart';
+import '../core/order_delivery_helper.dart';
 import '../core/stock_movement_helper.dart';
 import '../core/upholsterer_statement_helper.dart';
 import 'upholsterer_statement_screen.dart';
@@ -21,63 +21,40 @@ class UpholstererScreen extends StatefulWidget {
   State<UpholstererScreen> createState() => _UpholstererScreenState();
 }
 
-/// عنصر يمثل قطعة قيد التعديل في نافذة التسليم للمنجد
-class _UphPieceItem {
-  final TextEditingController nameCtrl;
-  final TextEditingController qtyCtrl;
+/// عنصر يمثل قطعة قيد التعديل داخل نافذة التنفيذ (تسليم أو استلام)
+class _PieceInputItem {
+  final String name;
   final int baseQty;
+  final int maxAllowed; // -1 يعني بدون حد (في حالة التسليم للمنجد)
+  final TextEditingController qtyCtrl;
 
-  _UphPieceItem({required String name, required int qty, this.baseQty = 1})
-      : nameCtrl = TextEditingController(text: name),
-        qtyCtrl = TextEditingController(text: qty >= 0 ? qty.toString() : '0');
+  _PieceInputItem({
+    required this.name,
+    required this.baseQty,
+    required int initialQty,
+    this.maxAllowed = -1,
+  }) : qtyCtrl = TextEditingController(text: '${initialQty >= 0 ? initialQty : 0}');
 
   void dispose() {
-    nameCtrl.dispose();
     qtyCtrl.dispose();
   }
 }
 
-/// عنصر يمثل قطعة قيد التعديل في نافذة تعديل دفعة المنجد
-class _EditBatchPieceItem {
-  final TextEditingController nameCtrl;
-  final TextEditingController qtyCtrl;
-  final int baseQty;
-  final int receivedQty;
-  final String sentDate;
-  final String? receivedDate;
-
-  _EditBatchPieceItem({
-    required String name,
-    required int sentQty,
-    required this.receivedQty,
-    this.baseQty = 1,
-    required this.sentDate,
-    this.receivedDate,
-  })  : nameCtrl = TextEditingController(text: name),
-        qtyCtrl = TextEditingController(text: '$sentQty');
-
-  void dispose() {
-    nameCtrl.dispose();
-    qtyCtrl.dispose();
-  }
-}
-
-class _UpholstererScreenState extends State<UpholstererScreen> {
-  List<Map<String, dynamic>> _batches = [];
+class _UpholstererScreenState extends State<UpholstererScreen>
+    with SingleTickerProviderStateMixin {
+  late final TabController _tabController;
   List<Map<String, dynamic>> _categories = [];
+  List<Map<String, dynamic>> _batches = [];
+  List<Map<String, dynamic>> _transactions = [];
 
-  // الدفعات الموسعة لعرض التفاصيل
-  final Set<int> _expandedBatchIds = {};
-
-  // فلاتر البحث
-  final TextEditingController _searchUphCtrl = TextEditingController();
-  String _searchUphName = '';
-  String? _selectedCategoryFilter; // null or 'all' = الكل
-  String _statusFilter = 'all'; // 'all', 'in_progress', 'completed'
+  final Set<int> _expandedCategoryIds = {};
+  final TextEditingController _searchCtrl = TextEditingController();
+  String _searchQuery = '';
 
   @override
   void initState() {
     super.initState();
+    _tabController = TabController(length: 2, vsync: this);
     _load();
     AppEvents.instance.refreshNotifier.addListener(_load);
   }
@@ -85,70 +62,229 @@ class _UpholstererScreenState extends State<UpholstererScreen> {
   @override
   void dispose() {
     AppEvents.instance.refreshNotifier.removeListener(_load);
-    _searchUphCtrl.dispose();
+    _tabController.dispose();
+    _searchCtrl.dispose();
     super.dispose();
+  }
+
+  /// دمج تلقائي لأي دفعات مكررة تحمل نفس الصنف (أو نفس الاسم بعد التطبيع) في سجل واحد موحّد
+  Future<void> _autoMergeDuplicateBatches(Database db) async {
+    try {
+      final allBatches = await db.query('upholsterer_batches', orderBy: 'id ASC');
+      if (allBatches.length <= 1) return;
+
+      final Map<String, List<Map<String, dynamic>>> grouped = {};
+      for (final b in allBatches) {
+        final int catId = CategoryStockHelper.parseInt(b['category_id']);
+        final String normName = SearchableSelectFormField.normalizeArabic(
+          (b['category_name'] ?? '').toString(),
+        );
+        final String key = normName.isNotEmpty ? 'name:$normName' : 'id:$catId';
+        grouped.putIfAbsent(key, () => []).add(b);
+      }
+
+      for (final entry in grouped.entries) {
+        final list = entry.value;
+        if (list.length <= 1) continue;
+
+        final primary = list.first;
+        final int primaryId = primary['id'] as int;
+
+        final Map<String, Map<String, dynamic>> mergedPieces = {};
+        String latestUphName = (primary['upholsterer_name'] ?? '').toString().trim();
+        String latestSentDate = (primary['sent_date'] ?? '').toString();
+        String? latestRecDate = primary['received_date']?.toString();
+
+        for (final b in list) {
+          final u = (b['upholsterer_name'] ?? '').toString().trim();
+          if (u.isNotEmpty) latestUphName = u;
+          final sd = (b['sent_date'] ?? '').toString();
+          if (sd.compareTo(latestSentDate) > 0) latestSentDate = sd;
+          final rd = b['received_date']?.toString();
+          if (rd != null && rd.isNotEmpty && (latestRecDate == null || rd.compareTo(latestRecDate) > 0)) {
+            latestRecDate = rd;
+          }
+
+          final pieces = UpholstererStatementHelper.parseBatchPieces(b);
+          for (final p in pieces) {
+            final pName = (p['name'] ?? '').toString().trim();
+            if (pName.isEmpty) continue;
+            final sQty = CategoryStockHelper.parseInt(p['sent_qty']);
+            final rQty = CategoryStockHelper.parseInt(p['received_qty']);
+            final bQty = math.max(1, CategoryStockHelper.parseInt(p['base_qty'], fallback: 1));
+
+            if (mergedPieces.containsKey(pName)) {
+              mergedPieces[pName]!['sent_qty'] =
+                  CategoryStockHelper.parseInt(mergedPieces[pName]!['sent_qty']) + sQty;
+              mergedPieces[pName]!['received_qty'] =
+                  CategoryStockHelper.parseInt(mergedPieces[pName]!['received_qty']) + rQty;
+              mergedPieces[pName]!['base_qty'] = bQty;
+              if (p['sent_date'] != null) mergedPieces[pName]!['sent_date'] = p['sent_date'];
+              if (p['received_date'] != null) mergedPieces[pName]!['received_date'] = p['received_date'];
+            } else {
+              mergedPieces[pName] = {
+                'name': pName,
+                'base_qty': bQty,
+                'sent_qty': sQty,
+                'received_qty': rQty,
+                'sent_date': p['sent_date'] ?? b['sent_date'],
+                'received_date': p['received_date'] ?? b['received_date'],
+              };
+            }
+          }
+        }
+
+        final pieceList = mergedPieces.values.toList();
+        int totalSent = 0;
+        int totalRec = 0;
+        for (final p in pieceList) {
+          totalSent += CategoryStockHelper.parseInt(p['sent_qty']);
+          totalRec += CategoryStockHelper.parseInt(p['received_qty']);
+        }
+        final sentSets = CategoryStockHelper.computeBreakdownFromPieces(
+          pieceList,
+          qtyKey: 'sent_qty',
+        ).completeSets;
+        final recSets = CategoryStockHelper.computeBreakdownFromPieces(
+          pieceList,
+          qtyKey: 'received_qty',
+        ).completeSets;
+
+        await db.transaction((txn) async {
+          await txn.update(
+            'upholsterer_batches',
+            {
+              'upholsterer_name': latestUphName,
+              'total_sent': totalSent,
+              'received_qty': totalRec,
+              'sets_sent': sentSets,
+              'sets_received': recSets,
+              'sent_date': latestSentDate,
+              'received_date': latestRecDate,
+              'pieces_json': jsonEncode(pieceList),
+            },
+            where: 'id = ?',
+            whereArgs: [primaryId],
+          );
+
+          for (int i = 1; i < list.length; i++) {
+            final dupId = list[i]['id'] as int;
+            await txn.update(
+              'upholsterer_transactions',
+              {'batch_id': primaryId},
+              where: 'batch_id = ?',
+              whereArgs: [dupId],
+            );
+            await txn.delete('upholsterer_batches', where: 'id = ?', whereArgs: [dupId]);
+          }
+        });
+      }
+    } catch (_) {}
   }
 
   Future<void> _load() async {
     final db = await DBHelper.instance.database;
     await CategoryStockHelper.syncDatabaseStock(db);
-    final b = await db.query('upholsterer_batches', orderBy: 'id DESC');
-    final c = await db.query('categories', orderBy: 'name ASC');
+    await _autoMergeDuplicateBatches(db);
+
+    final cats = await db.query('categories', orderBy: 'id DESC');
+    final batches = await db.query('upholsterer_batches', orderBy: 'id DESC');
+    List<Map<String, dynamic>> txs = [];
+    try {
+      txs = await db.query('upholsterer_transactions', orderBy: 'id DESC');
+    } catch (_) {}
+
     if (mounted) {
       setState(() {
-        _batches = b;
-        _categories = c;
+        _categories = cats;
+        _batches = batches;
+        _transactions = txs;
       });
     }
   }
 
-
-
-  /// قائمة الدفعات بعد تطبيق الفلاتر
-  List<Map<String, dynamic>> get _filteredBatches {
-    return _batches.where((b) {
-      final uphName = (b['upholsterer_name'] ?? '').toString().toLowerCase();
-      final catName = (b['category_name'] ?? '').toString();
-      final sent = (b['total_sent'] as int?) ?? 0;
-      final rec = (b['received_qty'] as int?) ?? 0;
-      final isDone = (sent - rec) <= 0;
-
-      // فلتر اسم المنجد
-      if (_searchUphName.trim().isNotEmpty) {
-        if (!uphName.contains(_searchUphName.trim().toLowerCase())) {
-          return false;
-        }
-      }
-
-      // فلتر الصنف / الطقم
-      if (_selectedCategoryFilter != null && _selectedCategoryFilter != 'all') {
-        if (catName != _selectedCategoryFilter) {
-          return false;
-        }
-      }
-
-      // فلتر الحالة
-      if (_statusFilter == 'in_progress' && isDone) {
-        return false;
-      }
-      if (_statusFilter == 'completed' && !isDone) {
-        return false;
-      }
-
-      return true;
-    }).toList();
+  /// جلب الدفعة المدمجة الخاصة بصنف معين (إن وجدت) مع تجميع القطع على أساس مكونات الصنف الرسمية
+  Map<String, dynamic>? _findMergedBatchForCategory(Map<String, dynamic> cat) {
+    final int catId = CategoryStockHelper.parseInt(cat['id']);
+    final String normCatName = SearchableSelectFormField.normalizeArabic(
+      (cat['name'] ?? '').toString(),
+    );
+    for (final b in _batches) {
+      if (CategoryStockHelper.parseInt(b['category_id']) == catId) return b;
+      final bNorm = SearchableSelectFormField.normalizeArabic(
+        (b['category_name'] ?? '').toString(),
+      );
+      if (normCatName.isNotEmpty && bNorm == normCatName) return b;
+    }
+    return null;
   }
 
-  /// نافذة عرض تفاصيل القطع الفردية المتبقية لدى المنجد
-  void _showUpholstererIndividualPiecesDialog({
-    required BuildContext context,
-    required String setName,
-    required String upholstererName,
+  /// بناء قائمة القطع الكاملة لصنف لدى المنجد بدمج مكونات الصنف التأسيسية مع ما تم تسليمه واستلامه
+  List<Map<String, dynamic>> _buildCategoryWorkshopPieces(
+    Map<String, dynamic> cat,
+    Map<String, dynamic>? batch,
+  ) {
+    final catComps = CategoryStockHelper.parseComponents(cat['components_json']);
+    final batchPieces = batch != null
+        ? UpholstererStatementHelper.parseBatchPieces(batch)
+        : const <Map<String, dynamic>>[];
+
+    final Map<String, Map<String, dynamic>> byName = {};
+    for (final c in catComps) {
+      final name = (c['name'] ?? '').toString().trim();
+      if (name.isEmpty) continue;
+      final base = math.max(1, CategoryStockHelper.parseInt(c['base_qty'], fallback: 1));
+      byName[name] = {
+        'name': name,
+        'base_qty': base,
+        'sent_qty': 0,
+        'received_qty': 0,
+      };
+    }
+
+    for (final bp in batchPieces) {
+      final name = (bp['name'] ?? '').toString().trim();
+      if (name.isEmpty) continue;
+      final sQty = CategoryStockHelper.parseInt(bp['sent_qty']);
+      final rQty = CategoryStockHelper.parseInt(bp['received_qty']);
+      final base = math.max(1, CategoryStockHelper.parseInt(bp['base_qty'], fallback: 1));
+      if (byName.containsKey(name)) {
+        byName[name]!['sent_qty'] = CategoryStockHelper.parseInt(byName[name]!['sent_qty']) + sQty;
+        byName[name]!['received_qty'] = CategoryStockHelper.parseInt(byName[name]!['received_qty']) + rQty;
+      } else {
+        byName[name] = {
+          'name': name,
+          'base_qty': base,
+          'sent_qty': sQty,
+          'received_qty': rQty,
+        };
+      }
+    }
+
+    return byName.values.toList();
+  }
+
+  Set<String> _collectPreviousUpholsterers() {
+    final names = <String>{};
+    for (final b in _batches) {
+      final n = (b['upholsterer_name'] ?? '').toString().trim();
+      if (n.isNotEmpty) names.add(n);
+    }
+    for (final t in _transactions) {
+      final n = (t['upholsterer_name'] ?? '').toString().trim();
+      if (n.isNotEmpty) names.add(n);
+    }
+    return names;
+  }
+
+  /// نافذة عرض القطع الفردية المتبقية عند الضغط على أفاتار "فردي"
+  void _showIndividualPiecesDialog({
+    required String categoryName,
     required int completeSets,
     required int totalExcess,
     required List<Map<String, dynamic>> excessPieces,
   }) {
-    showDialog(
+    showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
@@ -157,10 +293,10 @@ class _UpholstererScreenState extends State<UpholstererScreen> {
             Container(
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
-                color: const Color(0xFFD97706).withValues(alpha: 0.15),
+                color: AppTheme.warningBg(ctx),
                 borderRadius: BorderRadius.circular(10),
               ),
-              child: const Icon(Icons.chair_rounded, color: Color(0xFFD97706), size: 24),
+              child: Icon(Icons.chair_rounded, color: AppTheme.warningFg(ctx), size: 22),
             ),
             const SizedBox(width: 10),
             Expanded(
@@ -168,14 +304,19 @@ class _UpholstererScreenState extends State<UpholstererScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Text(
-                    'تفاصيل الرصيد الفردي لدى المنجد',
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppTheme.primaryNavy),
+                  Text(
+                    'القطع الفردية لدى المنجد',
+                    style: TextStyle(
+                      fontSize: 15.5,
+                      fontWeight: FontWeight.bold,
+                      color: AppTheme.textPrimary(ctx),
+                    ),
                   ),
                   Text(
-                    'طقم: $setName | المنجد: $upholstererName',
-                    style: const TextStyle(fontSize: 12, color: Colors.grey, fontWeight: FontWeight.normal),
+                    '$categoryName (أطقم كاملة: $completeSets)',
+                    maxLines: 1,
                     overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: 12, color: AppTheme.textMuted(ctx)),
                   ),
                 ],
               ),
@@ -183,114 +324,57 @@ class _UpholstererScreenState extends State<UpholstererScreen> {
           ],
         ),
         content: totalExcess == 0
-            ? const Padding(
-                padding: EdgeInsets.symmetric(vertical: 16),
-                child: Row(
-                  children: [
-                    Icon(Icons.check_circle, color: Colors.green, size: 22),
-                    SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        'لا توجد قطع فردية متبقية. كافة القطع متكاملة ضمن الأطقم المسلّمة للمنجد.',
-                        style: TextStyle(fontSize: 14),
-                      ),
-                    ),
-                  ],
-                ),
-              )
+            ? const Text('لا توجد قطع فردية متبقية لهذا الصنف لدى المنجد حالياً.')
             : SingleChildScrollView(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  children: excessPieces.map((p) {
+                    final qty = CategoryStockHelper.parseInt(p['rem_qty'], fallback: CategoryStockHelper.parseInt(p['excess_qty']));
+                    return Container(
+                      margin: const EdgeInsets.symmetric(vertical: 4),
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                       decoration: BoxDecoration(
-                        color: const Color(0xFFD97706).withValues(alpha: 0.08),
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: const Color(0xFFD97706).withValues(alpha: 0.2)),
+                        color: AppTheme.subtleBg(ctx),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: AppTheme.borderColor(ctx)),
                       ),
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          const Text(
-                            'إجمالي القطع الفردية المتبقية:',
-                            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Color(0xFFB45309)),
+                          Text(
+                            (p['name'] ?? '').toString(),
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 14,
+                              color: AppTheme.textPrimary(ctx),
+                            ),
                           ),
                           Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                             decoration: BoxDecoration(
                               color: const Color(0xFFD97706),
-                              borderRadius: BorderRadius.circular(6),
+                              borderRadius: BorderRadius.circular(8),
                             ),
                             child: Text(
-                              '$totalExcess قطعة',
-                              style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 13, color: Colors.white),
+                              '$qty قطعة فردية',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 12,
+                              ),
                             ),
                           ),
                         ],
                       ),
-                    ),
-                    const SizedBox(height: 12),
-                    const Text(
-                      'القطع الفردية المتبقية لدى المنجد:',
-                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.black87),
-                    ),
-                    const SizedBox(height: 6),
-                    ...excessPieces.map((p) {
-                      final rem = p['rem_qty'] ?? p['excess_qty'];
-                      return Container(
-                        margin: const EdgeInsets.symmetric(vertical: 4),
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(10),
-                          border: Border.all(color: Colors.grey.shade300),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withValues(alpha: 0.02),
-                              blurRadius: 4,
-                              offset: const Offset(0, 1),
-                            ),
-                          ],
-                        ),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Row(
-                              children: [
-                                const Icon(Icons.weekend_outlined, size: 20, color: AppTheme.primaryNavy),
-                                const SizedBox(width: 8),
-                                Text(
-                                  (p['name'] ?? '').toString(),
-                                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: AppTheme.primaryNavy),
-                                ),
-                              ],
-                            ),
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFFD97706),
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: Text(
-                                '$rem قطعة فردية',
-                                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12),
-                              ),
-                            ),
-                          ],
-                        ),
-                      );
-                    }),
-                  ],
+                    );
+                  }).toList(),
                 ),
               ),
         actions: [
           ElevatedButton(
             style: ElevatedButton.styleFrom(
               backgroundColor: AppTheme.primaryNavy,
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              foregroundColor: AppTheme.royalGold,
             ),
             onPressed: () => Navigator.pop(ctx),
             child: const Text('إغلاق'),
@@ -300,1882 +384,1334 @@ class _UpholstererScreenState extends State<UpholstererScreen> {
     );
   }
 
-  /// نافذة تأكيد حذف دفعة
-  Future<void> _confirmDeleteBatch(Map<String, dynamic> batch) async {
-    final bool? confirm = await showDialog<bool>(
-      context: context,
-      builder: (dCtx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Row(
-          children: [
-            Icon(Icons.delete_forever, color: Colors.red, size: 28),
-            SizedBox(width: 8),
-            Text('تأكيد حذف الدفعة', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-          ],
-        ),
-        content: Text(
-          'هل أنت متأكد من حذف دفعة طقم "${batch['category_name']}" المسلّمة للمنجد "${batch['upholsterer_name']}"؟',
-          style: const TextStyle(fontSize: 15),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dCtx, false),
-            child: const Text('إلغاء', style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold)),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.red,
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-            ),
-            onPressed: () => Navigator.pop(dCtx, true),
-            child: const Text('تأكيد الحذف'),
-          ),
-        ],
-      ),
-    );
+  /// نافذة زر "تفاصيل" الخارجي على الكارت (تعرض سجل حركات الاستلام فقط في تاب استلام، أو التسليم فقط في تاب تسليم، مع التاريخ والأطقم والفردي)
+  void _openCategoryMovementsModal({
+    required Map<String, dynamic> category,
+    required bool isReceiveTab,
+  }) {
+    final int catId = CategoryStockHelper.parseInt(category['id']);
+    final String catName = (category['name'] ?? '').toString().trim();
+    final String normName = SearchableSelectFormField.normalizeArabic(catName);
+    final String targetType = isReceiveTab ? 'receive' : 'send';
+    final catComps = CategoryStockHelper.parseComponents(category['components_json']);
 
-    if (confirm == true) {
-      final db = await DBHelper.instance.database;
-      await db.delete('upholsterer_batches', where: 'id = ?', whereArgs: [batch['id']]);
-      try {
-        await db.delete('upholsterer_transactions', where: 'batch_id = ?', whereArgs: [batch['id']]);
-      } catch (_) {}
-      AppEvents.instance.notifyAll();
-      if (mounted) {
-        AppNotification.showError(context, 'تم حذف الدفعة بنجاح');
-      }
-    }
-  }
-
-  /// فتح شاشة كشف حساب المنجد (التسليم والاستلام مع الفلتر والمشاركة كصورة)
-  void _openAccountStatement() {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        fullscreenDialog: true,
-        builder: (_) => UpholstererStatementScreen(
-          initialCategoryFilter: _selectedCategoryFilter,
-        ),
-      ),
-    );
-  }
-
-  /// توثيق أي استلام تاريخي سابق للدفعة قبل تحديثها لأول مرة حتى لا يضيع تاريخ الاستلام القديم
-  Future<void> _ensureHistoricalReceiveTrackedIfNeeded(
-    Database db,
-    Map<String, dynamic> originalBatch,
-  ) async {
-    final batchId = originalBatch['id'];
-    if (batchId == null) return;
-    final int recQty = (originalBatch['received_qty'] as int?) ?? 0;
-    if (recQty <= 0) return;
-
-    try {
-      final existing = await db.query(
-        'upholsterer_transactions',
-        columns: ['id'],
-        where: 'batch_id = ? AND action_type = ?',
-        whereArgs: [batchId, 'receive'],
-        limit: 1,
-      );
-      if (existing.isNotEmpty) return;
-
-      final oldPieces = UpholstererStatementHelper.parseBatchPieces(originalBatch);
-      final Map<String, List<Map<String, dynamic>>> groupedByDate = {};
-      for (final p in oldPieces) {
-        final int pRec = (p['received_qty'] as int?) ?? 0;
-        if (pRec <= 0) continue;
-        final String dStr = (p['received_date'] ?? originalBatch['received_date'] ?? originalBatch['sent_date'] ?? '').toString().trim();
-        final parsed = UpholstererStatementHelper.parseDateOnly(dStr);
-        final key = parsed != null ? UpholstererStatementHelper.formatIsoDate(parsed) : dStr;
-        groupedByDate.putIfAbsent(key, () => []).add({
-          'name': (p['name'] ?? '').toString().trim(),
-          'qty': pRec,
-          'base_qty': (p['base_qty'] as int?) ?? 1,
-        });
-      }
-
-      for (final entry in groupedByDate.entries) {
-        int sumPieces = 0;
-        for (final item in entry.value) {
-          sumPieces += (item['qty'] as int?) ?? 0;
-        }
-        if (sumPieces <= 0) continue;
-        await db.insert('upholsterer_transactions', {
-          'batch_id': batchId,
-          'upholsterer_name': (originalBatch['upholsterer_name'] ?? '').toString(),
-          'category_id': originalBatch['category_id'],
-          'category_name': originalBatch['category_name'],
-          'action_type': 'receive',
-          'sets_count': 0,
-          'pieces_json': jsonEncode(entry.value),
-          'total_pieces': sumPieces,
-          'action_date': entry.key,
-          'created_at': entry.key,
-        });
-      }
-    } catch (_) {}
-  }
-
-  // ---------------------------------------------------------------------------
-  // 1. نافذة تسليم للمنجد (Send Modal) مطابقة لإضافة/تعديل أصناف المخزن
-  // ---------------------------------------------------------------------------
-  void _openSendModal() {
-    if (_categories.isEmpty) {
-      AppNotification.showInfo(
-        context,
-        'يرجى إضافة أصناف في قسم (البيانات والمخزن) أولاً لتتمكن من تسليم قطع للمنجد',
-      );
-      return;
-    }
-
-    final uphNameCtrl = TextEditingController();
-    int selectedCatId = _categories.first['id'] as int;
-
-    // تجميع قائمة أسماء المنجدين المسجلين سابقاً للاقتراح السريع
-    final Set<String> previousUpholsterers = _batches
-        .map((b) => (b['upholsterer_name'] ?? '').toString().trim())
-        .where((name) => name.isNotEmpty)
-        .toSet();
-
-    // قائمة القطع القابلة للتعديل
-    final List<_UphPieceItem> pieceItems = [];
-    int setsToDeliver = 1;
-    final setsCtrl = TextEditingController(text: '1');
-
-    void loadCategoryPieces(int catId, int setsCount) {
-      for (final p in pieceItems) {
-        p.dispose();
-      }
-      pieceItems.clear();
-
-      final cat = _categories.firstWhere((c) => c['id'] == catId, orElse: () => _categories.first);
-      List comps = [];
-      try {
-        comps = jsonDecode(cat['components_json']);
-      } catch (_) {}
-
-      if (comps.isNotEmpty) {
-        for (final c in comps) {
-          final pName = (c['name'] ?? '').toString();
-          final int baseQty = (c['base_qty'] is int)
-              ? c['base_qty'] as int
-              : ((c['qty'] is int) ? c['qty'] as int : (int.tryParse(c['qty']?.toString() ?? '1') ?? 1));
-          final safeBase = baseQty > 0 ? baseQty : 1;
-          pieceItems.add(_UphPieceItem(name: pName, qty: setsCount * safeBase, baseQty: safeBase));
-        }
-      } else {
-        pieceItems.add(_UphPieceItem(name: 'كنبة كبيرة', qty: setsCount, baseQty: 1));
-        pieceItems.add(_UphPieceItem(name: 'فوتيه', qty: setsCount * 2, baseQty: 2));
-      }
-    }
-
-    // تحميل قطع الصنف الأول كافتراضي
-    loadCategoryPieces(selectedCatId, setsToDeliver);
-
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      useSafeArea: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setModalState) {
-          final selectedCat = _categories.firstWhere(
-            (c) => c['id'] == selectedCatId,
-            orElse: () => _categories.first,
-          );
-
-          void syncSets(int n) {
-            setsToDeliver = n >= 0 ? n : 0;
-            setsCtrl.text = '$setsToDeliver';
-            for (final p in pieceItems) {
-              p.qtyCtrl.text = '${setsToDeliver * p.baseQty}';
-            }
-          }
-
-          return Padding(
-            padding: AppTheme.modalSheetPadding(ctx),
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  // رأس النافذة
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Row(
-                        children: [
-                          Icon(Icons.send_rounded, color: AppTheme.primaryNavy, size: 24),
-                          SizedBox(width: 8),
-                          Text(
-                            'تسليم طقم للمنجد للتشطيب',
-                            style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: AppTheme.primaryNavy),
-                          ),
-                        ],
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.close),
-                        onPressed: () => Navigator.pop(ctx),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-
-                  // 1. اسم المنجد
-                  TextField(
-                    controller: uphNameCtrl,
-                    decoration: const InputDecoration(
-                      labelText: 'اسم المنجد *',
-                      hintText: 'أدخل اسم المنجد أو الورشة',
-                      prefixIcon: Icon(Icons.person),
-                    ),
-                  ),
-
-                  // اقتراحات المنجدين السابقين
-                  if (previousUpholsterers.isNotEmpty) ...[
-                    const SizedBox(height: 6),
-                    SingleChildScrollView(
-                      scrollDirection: Axis.horizontal,
-                      child: Row(
-                        children: [
-                          const Text('منجدون سابقون: ', style: TextStyle(fontSize: 12, color: Colors.grey)),
-                          ...previousUpholsterers.take(5).map((name) {
-                            return Padding(
-                              padding: const EdgeInsets.only(left: 4),
-                              child: ActionChip(
-                                visualDensity: VisualDensity.compact,
-                                label: Text(name, style: const TextStyle(fontSize: 12)),
-                                onPressed: () {
-                                  setModalState(() {
-                                    uphNameCtrl.text = name;
-                                  });
-                                },
-                              ),
-                            );
-                          }),
-                        ],
-                      ),
-                    ),
-                  ],
-                  const SizedBox(height: 14),
-
-                  // 2. اختيار الصنف من المخزن مع إمكانية البحث السريع
-                  SearchableSelectFormField<int>(
-                    value: selectedCatId,
-                    labelText: 'الصنف / الطقم المطلوب تسليمه *',
-                    hintText: 'ابحث عن الطقم بالاسم لتحديده',
-                    searchHint: 'اكتب اسم الصنف للبحث والتصفية السريعة...',
-                    prefixIcon: const Icon(Icons.weekend, color: AppTheme.primaryNavy),
-                    items: _categories.map((c) {
-                      return SearchableSelectItem<int>(
-                        value: c['id'] as int,
-                        label: (c['name'] ?? '').toString(),
-                        subtitle: 'رصيد المعرض: ${CategoryStockHelper.formatStockSummary(c)}',
-                        badge: CategoryStockHelper.formatStockSummary(c),
-                        searchKey: (c['name'] ?? '').toString(),
-                      );
-                    }).toList(),
-                    onChanged: (val) {
-                      if (val != null && val != selectedCatId) {
-                        setModalState(() {
-                          selectedCatId = val;
-                          loadCategoryPieces(selectedCatId, setsToDeliver);
-                        });
-                      }
-                    },
-                  ),
-                  const SizedBox(height: 14),
-
-                  // 3. حقل إضافة عدد الأطقم مع أزرار كبيرة ومريحة
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: AppTheme.primaryNavy.withValues(alpha: 0.04),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: AppTheme.primaryNavy.withValues(alpha: 0.15)),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          'إضافة عدد الأطقم المراد تسليمها:',
-                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: AppTheme.primaryNavy),
-                        ),
-                        const SizedBox(height: 8),
-                        Row(
-                          children: [
-                            // زر إنقاص عدد الأطقم
-                            Material(
-                              color: Colors.red.shade50,
-                              borderRadius: BorderRadius.circular(10),
-                              child: InkWell(
-                                borderRadius: BorderRadius.circular(10),
-                                onTap: () {
-                                  if (setsToDeliver > 0) {
-                                    setModalState(() {
-                                      syncSets(setsToDeliver - 1);
-                                    });
-                                  }
-                                },
-                                child: const Padding(
-                                  padding: EdgeInsets.all(10.0),
-                                  child: Icon(Icons.remove, color: Colors.red, size: 26),
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 10),
-
-                            // حقل عدد الأطقم
-                            Expanded(
-                              child: TextField(
-                                controller: setsCtrl,
-                                keyboardType: TextInputType.number,
-                                textAlign: TextAlign.center,
-                                style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: AppTheme.primaryNavy),
-                                decoration: const InputDecoration(
-                                  labelText: 'عدد الأطقم',
-                                  prefixIcon: Icon(Icons.weekend_rounded),
-                                ),
-                                onChanged: (val) {
-                                  final n = int.tryParse(val.trim());
-                                  if (n != null && n >= 0) {
-                                    setModalState(() {
-                                      syncSets(n);
-                                    });
-                                  }
-                                },
-                              ),
-                            ),
-                            const SizedBox(width: 10),
-
-                            // زر زيادة عدد الأطقم
-                            Material(
-                              color: Colors.green.shade50,
-                              borderRadius: BorderRadius.circular(10),
-                              child: InkWell(
-                                borderRadius: BorderRadius.circular(10),
-                                onTap: () {
-                                  setModalState(() {
-                                    syncSets(setsToDeliver + 1);
-                                  });
-                                },
-                                child: const Padding(
-                                  padding: EdgeInsets.all(10.0),
-                                  child: Icon(Icons.add, color: Colors.green, size: 26),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-
-                  // 4. قطع الطقم المسلّمة وأعدادها (سرد قطع الطقم فقط دون إضافة قطع خارجية)
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                    decoration: BoxDecoration(
-                      color: Colors.amber.shade50,
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: Colors.amber.shade200),
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const Text(
-                          'مكونات الطقم وأعداد القطع المسلّمة:',
-                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: AppTheme.primaryNavy),
-                        ),
-                        Text(
-                          'طقم: ${selectedCat['name']} ($setsToDeliver طقم)',
-                          style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.brown, fontSize: 13),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-
-                  // قائمة القطع المسلّمة (مضاعفة ومسودة حسب الطقم مع إمكانية التعديل اليدوي)
-                  ...pieceItems.asMap().entries.map((entry) {
-                    final piece = entry.value;
-
-                    return Container(
-                      margin: const EdgeInsets.only(bottom: 8),
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: Colors.grey.shade300),
-                      ),
-                      child: Row(
-                        children: [
-                          const Icon(Icons.chair_rounded, color: AppTheme.primaryNavy, size: 20),
-                          const SizedBox(width: 8),
-
-                          // اسم القطعة مستخرج من المنيو مع النسبة التأسيسية
-                          Expanded(
-                            flex: 3,
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  piece.nameCtrl.text,
-                                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
-                                ),
-                                Text(
-                                  'النسبة: عدد ${piece.baseQty} في الطقم الواحد',
-                                  style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
-                                ),
-                              ],
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-
-                          // زر إنقاص عدد القطعة
-                          Material(
-                            color: Colors.red.shade50,
-                            borderRadius: BorderRadius.circular(8),
-                            child: InkWell(
-                              borderRadius: BorderRadius.circular(8),
-                              onTap: () {
-                                int q = int.tryParse(piece.qtyCtrl.text.trim()) ?? 0;
-                                if (q > 0) {
-                                  setModalState(() {
-                                    piece.qtyCtrl.text = '${q - 1}';
-                                  });
-                                }
-                              },
-                              child: const Padding(
-                                padding: EdgeInsets.all(8.0),
-                                child: Icon(Icons.remove, color: Colors.red, size: 22),
-                              ),
-                            ),
-                          ),
-
-                          // حقل عدد القطع
-                          Container(
-                            width: 50,
-                            margin: const EdgeInsets.symmetric(horizontal: 4),
-                            child: TextField(
-                              controller: piece.qtyCtrl,
-                              keyboardType: TextInputType.number,
-                              textAlign: TextAlign.center,
-                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-                              decoration: InputDecoration(
-                                isDense: true,
-                                contentPadding: const EdgeInsets.symmetric(horizontal: 4, vertical: 10),
-                                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                              ),
-                            ),
-                          ),
-
-                          // زر زيادة عدد القطعة
-                          Material(
-                            color: Colors.green.shade50,
-                            borderRadius: BorderRadius.circular(8),
-                            child: InkWell(
-                              borderRadius: BorderRadius.circular(8),
-                              onTap: () {
-                                int q = int.tryParse(piece.qtyCtrl.text.trim()) ?? 0;
-                                setModalState(() {
-                                  piece.qtyCtrl.text = '${q + 1}';
-                                });
-                              },
-                              child: const Padding(
-                                padding: EdgeInsets.all(8.0),
-                                child: Icon(Icons.add, color: Colors.green, size: 22),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    );
-                  }),
-                  const SizedBox(height: 18),
-
-                  // زر الحفظ
-                  ElevatedButton.icon(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppTheme.primaryNavy,
-                      foregroundColor: AppTheme.royalGold,
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                    ),
-                    onPressed: () async {
-                      final uphName = uphNameCtrl.text.trim();
-                      if (uphName.isEmpty) {
-                        AppNotification.showError(ctx, 'يرجى إدخال اسم المنجد أولاً');
-                        return;
-                      }
-
-                      final today = intl.DateFormat('yyyy-MM-dd').format(DateTime.now());
-
-                      // تجميع القطع
-                      final validPieces = <Map<String, dynamic>>[];
-                      int totalSent = 0;
-
-                      for (final p in pieceItems) {
-                        final pName = p.nameCtrl.text.trim();
-                        if (pName.isNotEmpty) {
-                          final pQty = int.tryParse(p.qtyCtrl.text.trim()) ?? 0;
-                          if (pQty > 0) {
-                            totalSent += pQty;
-                            validPieces.add({
-                              'name': pName,
-                              'base_qty': p.baseQty,
-                              'sent_qty': pQty,
-                              'received_qty': 0,
-                              'sent_date': today,
-                              'received_date': null,
-                            });
-                          }
-                        }
-                      }
-
-                      if (validPieces.isEmpty || totalSent <= 0) {
-                        AppNotification.showError(ctx, 'يرجى تحديد قطعة واحدة على الأقل للطقم');
-                        return;
-                      }
-
-                      final db = await DBHelper.instance.database;
-
-                      // التحقق مما إذا كان هناك طلب/دفعة مسجلة لنفس المنجد لنفس الصنف قيد التنجيد (غير مكتملة) للدمج التلقائي
-                      final existingBatches = await db.query(
-                        'upholsterer_batches',
-                        where: 'LOWER(TRIM(upholsterer_name)) = LOWER(TRIM(?)) AND category_id = ?',
-                        whereArgs: [uphName, selectedCat['id']],
-                        orderBy: 'id DESC',
-                      );
-
-                      Map<String, dynamic>? targetBatch;
-                      for (final eb in existingBatches) {
-                        final int sent = (eb['total_sent'] is int)
-                            ? eb['total_sent'] as int
-                            : (int.tryParse('${eb['total_sent']}') ?? 0);
-                        final int rec = (eb['received_qty'] is int)
-                            ? eb['received_qty'] as int
-                            : (int.tryParse('${eb['received_qty']}') ?? 0);
-                        if (sent > rec) {
-                          targetBatch = eb;
-                          break;
-                        }
-                      }
-
-                      int batchId;
-                      bool isMerged = false;
-
-                      if (targetBatch != null) {
-                        // دمج تلقائي مع الطلب القائم لنفس المنجد ونفس الصنف
-                        isMerged = true;
-                        batchId = targetBatch['id'] as int;
-                        final existingPieces = UpholstererStatementHelper.parseBatchPieces(targetBatch);
-
-                        for (final newP in validPieces) {
-                          final String newName = (newP['name'] ?? '').toString().trim();
-                          final int newSent = (newP['sent_qty'] as int?) ?? 0;
-                          final int newBase = (newP['base_qty'] as int?) ?? 1;
-
-                          bool pieceFound = false;
-                          for (final ep in existingPieces) {
-                            if ((ep['name'] ?? '').toString().trim() == newName) {
-                              final int oldSent = (ep['sent_qty'] as int?) ?? 0;
-                              ep['sent_qty'] = oldSent + newSent;
-                              ep['base_qty'] = newBase;
-                              ep['sent_date'] = today;
-                              pieceFound = true;
-                              break;
-                            }
-                          }
-
-                          if (!pieceFound) {
-                            existingPieces.add({
-                              'name': newName,
-                              'base_qty': newBase,
-                              'sent_qty': newSent,
-                              'received_qty': 0,
-                              'sent_date': today,
-                              'received_date': null,
-                            });
-                          }
-                        }
-
-                        final int oldTotalSent = (targetBatch['total_sent'] as int?) ?? 0;
-                        final int updatedTotalSent = oldTotalSent + totalSent;
-                        final int oldSetsSent = (targetBatch['sets_sent'] as int?) ?? 0;
-                        final int updatedSetsSent = oldSetsSent + setsToDeliver;
-
-                        await db.update(
-                          'upholsterer_batches',
-                          {
-                            'total_sent': updatedTotalSent,
-                            'sets_sent': updatedSetsSent,
-                            'pieces_json': jsonEncode(existingPieces),
-                            'sent_date': today,
-                          },
-                          where: 'id = ?',
-                          whereArgs: [batchId],
-                        );
-                      } else {
-                        // إنشاء دفعة جديدة
-                        batchId = await db.insert('upholsterer_batches', {
-                          'upholsterer_name': uphName,
-                          'category_id': selectedCat['id'],
-                          'category_name': selectedCat['name'],
-                          'piece_name': validPieces.first['name'],
-                          'total_sent': totalSent,
-                          'received_qty': 0,
-                          'sent_date': today,
-                          'received_date': null,
-                          'sets_sent': setsToDeliver,
-                          'sets_received': 0,
-                          'pieces_json': jsonEncode(validPieces),
-                        });
-                      }
-
-                      try {
-                        final txPieces = validPieces
-                            .map((p) => {
-                                  'name': p['name'],
-                                  'qty': p['sent_qty'],
-                                  'base_qty': p['base_qty'],
-                                })
-                            .toList();
-                        await db.insert('upholsterer_transactions', {
-                          'batch_id': batchId,
-                          'upholsterer_name': uphName,
-                          'category_id': selectedCat['id'],
-                          'category_name': selectedCat['name'],
-                          'action_type': 'send',
-                          'sets_count': setsToDeliver,
-                          'pieces_json': jsonEncode(txPieces),
-                          'total_pieces': totalSent,
-                          'action_date': UpholstererStatementHelper.formatIsoDate(DateTime.now()),
-                          'created_at': StockMovementHelper.formatDateTime12(DateTime.now()),
-                        });
-                      } catch (_) {}
-
-                      await StockMovementHelper.logMovement(
-                        categoryId: selectedCat['id'],
-                        categoryName: selectedCat['name'],
-                        movementType: 'upholsterer_out',
-                        qtyChange: 0,
-                        stockAfter: (selectedCat['stock_qty'] as int?) ?? 0,
-                        notes: 'تسليم للمنجد: $uphName (عدد $totalSent قطعة)',
-                      );
-
-                      AppEvents.instance.notifyAll();
-                      if (mounted) {
-                        Navigator.pop(ctx);
-                        AppNotification.showSuccess(
-                          context,
-                          isMerged
-                              ? 'تم دمج التسليم الجديد تلقائياً مع طلبات المنجد $uphName لطقم (${selectedCat['name']}) بنجاح'
-                              : 'تم تسجيل تسليم طقم (${selectedCat['name']}) للمنجد بنجاح',
-                        );
-                      }
-                    },
-                    icon: const Icon(Icons.check_circle_rounded),
-                    label: const Text(
-                      'تسجيل التسليم للمنجد',
-                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                ],
-              ),
-            ),
-          );
-        },
-      ),
-    ).whenComplete(() {
-      uphNameCtrl.dispose();
-      setsCtrl.dispose();
-      for (final p in pieceItems) {
-        p.dispose();
-      }
-    });
-  }
-
-  // ---------------------------------------------------------------------------
-  // 1.5. نافذة تعديل بيانات الدفعة والأصناف لدى المنجد
-  // ---------------------------------------------------------------------------
-  void _openEditBatchModal(Map<String, dynamic> initialBatch) {
-    final Map<String, dynamic> batch = Map<String, dynamic>.from(initialBatch);
-    final int batchId = batch['id'] as int;
-    final uphNameCtrl = TextEditingController(text: (batch['upholsterer_name'] ?? '').toString());
-    int setsCount = (batch['sets_sent'] as int?) ?? 1;
-    final setsCtrl = TextEditingController(text: '$setsCount');
-
-    final rawPieces = UpholstererStatementHelper.parseBatchPieces(batch);
-    final List<_EditBatchPieceItem> pieceItems = rawPieces.map((p) {
-      final pName = (p['name'] ?? 'قطعة').toString();
-      final int pSent = (p['sent_qty'] as int?) ?? 1;
-      final int pRec = (p['received_qty'] as int?) ?? 0;
-      final int bQty = (p['base_qty'] as int?) ?? 1;
-      final sDate = (p['sent_date'] ?? batch['sent_date'] ?? '').toString();
-      final rDate = p['received_date']?.toString();
-      return _EditBatchPieceItem(
-        name: pName,
-        sentQty: pSent,
-        receivedQty: pRec,
-        baseQty: bQty > 0 ? bQty : 1,
-        sentDate: sDate,
-        receivedDate: rDate,
-      );
+    final matchingTxs = _transactions.where((tx) {
+      if ((tx['action_type'] ?? '').toString() != targetType) return false;
+      if (CategoryStockHelper.parseInt(tx['category_id']) == catId) return true;
+      return SearchableSelectFormField.normalizeArabic((tx['category_name'] ?? '').toString()) == normName;
     }).toList();
 
-    showModalBottomSheet(
+    showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setModalState) {
-          void syncEditSets(int n) {
-            setsCount = n >= 0 ? n : 0;
-            setsCtrl.text = '$setsCount';
-            if (setsCount == 0) {
-              for (final p in pieceItems) {
-                // عند النزول بعدد الأطقم إلى صفر تصبح القطع صفر ما لم تكن مستلمة بالفعل
-                p.qtyCtrl.text = '${p.receivedQty}';
-              }
-            } else {
-              for (final p in pieceItems) {
-                final target = setsCount * p.baseQty;
-                p.qtyCtrl.text = '${target >= p.receivedQty ? target : p.receivedQty}';
-              }
-            }
-          }
-
-          return Padding(
-            padding: AppTheme.modalSheetPadding(ctx),
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Row(
-                        children: [
-                          const Icon(Icons.edit_note_rounded, color: AppTheme.primaryNavy, size: 26),
-                          const SizedBox(width: 8),
-                          Text(
-                            'تعديل الصنف: طقم (${batch['category_name']})',
-                            style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: AppTheme.primaryNavy),
-                          ),
-                        ],
+      builder: (ctx) => Padding(
+        padding: AppTheme.modalSheetPadding(ctx),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  isReceiveTab ? Icons.move_to_inbox_rounded : Icons.outbox_rounded,
+                  color: isReceiveTab ? Colors.green.shade600 : AppTheme.accentOnSurface(ctx),
+                  size: 24,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: AlignmentDirectional.centerStart,
+                    child: Text(
+                      isReceiveTab ? 'سجل الاستلام — $catName' : 'سجل التسليم — $catName',
+                      maxLines: 1,
+                      style: TextStyle(
+                        fontSize: 16.5,
+                        fontWeight: FontWeight.bold,
+                        color: AppTheme.textPrimary(ctx),
                       ),
-                      IconButton(
-                        icon: const Icon(Icons.close),
-                        onPressed: () => Navigator.pop(ctx),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-
-                  // اسم المنجد
-                  TextField(
-                    controller: uphNameCtrl,
-                    decoration: const InputDecoration(
-                      labelText: 'اسم المنجد *',
-                      prefixIcon: Icon(Icons.person),
                     ),
                   ),
-                  const SizedBox(height: 14),
-
-                  // عدد الأطقم
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: AppTheme.primaryNavy.withValues(alpha: 0.04),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: AppTheme.primaryNavy.withValues(alpha: 0.15)),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          'تعديل عدد الأطقم:',
-                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: AppTheme.primaryNavy),
-                        ),
-                        const SizedBox(height: 8),
-                        Row(
-                          children: [
-                            Material(
-                              color: Colors.red.shade50,
-                              borderRadius: BorderRadius.circular(10),
-                              child: InkWell(
-                                borderRadius: BorderRadius.circular(10),
-                                onTap: () {
-                                  if (setsCount > 0) {
-                                    setModalState(() {
-                                      syncEditSets(setsCount - 1);
-                                    });
-                                  }
-                                },
-                                child: const Padding(
-                                  padding: EdgeInsets.all(10.0),
-                                  child: Icon(Icons.remove, color: Colors.red, size: 26),
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: TextField(
-                                controller: setsCtrl,
-                                keyboardType: TextInputType.number,
-                                textAlign: TextAlign.center,
-                                style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: AppTheme.primaryNavy),
-                                decoration: const InputDecoration(
-                                  labelText: 'عدد الأطقم',
-                                  prefixIcon: Icon(Icons.weekend_rounded),
-                                ),
-                                onChanged: (val) {
-                                  final n = int.tryParse(val.trim());
-                                  if (n != null && n >= 0) {
-                                    setModalState(() {
-                                      syncEditSets(n);
-                                    });
-                                  }
-                                },
-                              ),
-                            ),
-                            const SizedBox(width: 10),
-                            Material(
-                              color: Colors.green.shade50,
-                              borderRadius: BorderRadius.circular(10),
-                              child: InkWell(
-                                borderRadius: BorderRadius.circular(10),
-                                onTap: () {
-                                  setModalState(() {
-                                    syncEditSets(setsCount + 1);
-                                  });
-                                },
-                                child: const Padding(
-                                  padding: EdgeInsets.all(10.0),
-                                  child: Icon(Icons.add, color: Colors.green, size: 26),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-
-                  // قائمة القطع
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                    decoration: BoxDecoration(
-                      color: Colors.amber.shade50,
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: Colors.amber.shade200),
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const Text(
-                          'قطع الطقم المسلّمة للمنجد:',
-                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: AppTheme.primaryNavy),
-                        ),
-                        Text(
-                          'طقم: ${batch['category_name']} ($setsCount طقم)',
-                          style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.brown, fontSize: 13),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-
-                  ...pieceItems.asMap().entries.map((entry) {
-                    final piece = entry.value;
-                    return Container(
-                      margin: const EdgeInsets.only(bottom: 8),
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: Colors.grey.shade300),
-                      ),
-                      child: Row(
-                        children: [
-                          const Icon(Icons.chair_rounded, color: AppTheme.primaryNavy, size: 20),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            flex: 3,
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  piece.nameCtrl.text,
-                                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
-                                ),
-                                if (piece.receivedQty > 0)
-                                  Text(
-                                    'مستلم منها: ${piece.receivedQty} قطعة (لا يمكن إنقاص المسلّم دونها)',
-                                    style: TextStyle(fontSize: 11, color: Colors.green.shade800, fontWeight: FontWeight.w600),
-                                  )
-                                else
-                                  Text(
-                                    'النسبة: عدد ${piece.baseQty} في الطقم الواحد',
-                                    style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
-                                  ),
-                              ],
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-
-                          // زر إنقاص
-                          Material(
-                            color: Colors.red.shade50,
-                            borderRadius: BorderRadius.circular(8),
-                            child: InkWell(
-                              borderRadius: BorderRadius.circular(8),
-                              onTap: () {
-                                int q = int.tryParse(piece.qtyCtrl.text.trim()) ?? 0;
-                                if (q > piece.receivedQty) {
-                                  setModalState(() {
-                                    piece.qtyCtrl.text = '${q - 1}';
-                                  });
-                                }
-                              },
-                              child: const Padding(
-                                padding: EdgeInsets.all(8.0),
-                                child: Icon(Icons.remove, color: Colors.red, size: 22),
-                              ),
-                            ),
-                          ),
-
-                          // حقل الإدخال
-                          Container(
-                            width: 50,
-                            margin: const EdgeInsets.symmetric(horizontal: 4),
-                            child: TextField(
-                              controller: piece.qtyCtrl,
-                              keyboardType: TextInputType.number,
-                              textAlign: TextAlign.center,
-                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-                              decoration: InputDecoration(
-                                isDense: true,
-                                contentPadding: const EdgeInsets.symmetric(horizontal: 4, vertical: 10),
-                                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                              ),
-                            ),
-                          ),
-
-                          // زر زيادة
-                          Material(
-                            color: Colors.green.shade50,
-                            borderRadius: BorderRadius.circular(8),
-                            child: InkWell(
-                              borderRadius: BorderRadius.circular(8),
-                              onTap: () {
-                                int q = int.tryParse(piece.qtyCtrl.text.trim()) ?? 0;
-                                setModalState(() {
-                                  piece.qtyCtrl.text = '${q + 1}';
-                                });
-                              },
-                              child: const Padding(
-                                padding: EdgeInsets.all(8.0),
-                                child: Icon(Icons.add, color: Colors.green, size: 22),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    );
-                  }),
-                  const SizedBox(height: 18),
-
-                  ElevatedButton.icon(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppTheme.primaryNavy,
-                      foregroundColor: AppTheme.royalGold,
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                    ),
-                    onPressed: () async {
-                      final uphName = uphNameCtrl.text.trim();
-                      if (uphName.isEmpty) {
-                        AppNotification.showError(ctx, 'يرجى إدخال اسم المنجد أولاً');
-                        return;
-                      }
-
-                      int totalSent = 0;
-                      int totalRec = 0;
-                      final updatedPieces = <Map<String, dynamic>>[];
-
-                      for (final p in pieceItems) {
-                        final pName = p.nameCtrl.text.trim().isNotEmpty ? p.nameCtrl.text.trim() : 'قطعة';
-                        final q = int.tryParse(p.qtyCtrl.text.trim()) ?? p.receivedQty;
-                        if (q < p.receivedQty) {
-                          AppNotification.showError(ctx, 'لا يمكن جعل عدد القطع المسلّمة لـ "$pName" أقل من المستلم فعلياً (${p.receivedQty})');
-                          return;
-                        }
-                        if (q > 0 || p.receivedQty > 0) {
-                          totalSent += q;
-                          totalRec += p.receivedQty;
-                          updatedPieces.add({
-                            'name': pName,
-                            'base_qty': p.baseQty,
-                            'sent_qty': q,
-                            'received_qty': p.receivedQty,
-                            'sent_date': p.sentDate,
-                            'received_date': p.receivedDate,
-                          });
-                        }
-                      }
-
-                      if (totalSent <= 0) {
-                        AppNotification.showError(ctx, 'يرجى تحديد قطعة واحدة مسلّمة على الأقل');
-                        return;
-                      }
-
-                      final recalculatedSetsSent = CategoryStockHelper.computeBreakdownFromPieces(
-                        updatedPieces,
-                        qtyKey: 'sent_qty',
-                      ).completeSets;
-
-                      final db = await DBHelper.instance.database;
-                      await db.update(
-                        'upholsterer_batches',
-                        {
-                          'upholsterer_name': uphName,
-                          'piece_name': updatedPieces.isNotEmpty ? updatedPieces.first['name'] : batch['piece_name'],
-                          'total_sent': totalSent,
-                          'received_qty': totalRec,
-                          'sets_sent': recalculatedSetsSent,
-                          'pieces_json': jsonEncode(updatedPieces),
-                        },
-                        where: 'id = ?',
-                        whereArgs: [batchId],
-                      );
-
-                      try {
-                        await db.update(
-                          'upholsterer_transactions',
-                          {
-                            'upholsterer_name': uphName,
-                          },
-                          where: 'batch_id = ?',
-                          whereArgs: [batchId],
-                        );
-                      } catch (_) {}
-
-                      AppEvents.instance.notifyAll();
-                      if (mounted) {
-                        Navigator.pop(ctx);
-                        AppNotification.showSuccess(context, 'تم تحديث بيانات الصنف والمنجد بنجاح');
-                      }
-                    },
-                    icon: const Icon(Icons.check_circle_rounded),
-                    label: const Text(
-                      'حفظ التعديلات',
-                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                ],
-              ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.close),
+                  onPressed: () => Navigator.pop(ctx),
+                ),
+              ],
             ),
-          );
-        },
-      ),
-    ).whenComplete(() {
-      uphNameCtrl.dispose();
-      setsCtrl.dispose();
-      for (final p in pieceItems) {
-        p.dispose();
-      }
-    });
-  }
+            const SizedBox(height: 8),
+            if (matchingTxs.isEmpty)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 28),
+                child: Text(
+                  isReceiveTab
+                      ? 'لا توجد حركات استلام مسجلة لصنف "$catName" حتى الآن.'
+                      : 'لا توجد حركات تسليم مسجلة لصنف "$catName" حتى الآن.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: AppTheme.textMuted(ctx), fontSize: 14),
+                ),
+              )
+            else
+              ConstrainedBox(
+                constraints: BoxConstraints(maxHeight: MediaQuery.sizeOf(ctx).height * 0.58),
+                child: ListView.separated(
+                  shrinkWrap: true,
+                  itemCount: matchingTxs.length,
+                  separatorBuilder: (_, __) => const SizedBox(height: 8),
+                  itemBuilder: (_, idx) {
+                    final tx = matchingTxs[idx];
+                    final txPieces = CategoryStockHelper.parseComponents(tx['pieces_json']);
+                    final summary = OrderDeliveryHelper.summarizeOrder(
+                      orderComps: txPieces,
+                      rawCategoryComps: catComps,
+                    );
+                    final label = CategoryStockHelper.formatSetsAndIndividual(
+                      summary.sets,
+                      summary.individualPieces,
+                    );
+                    final dateStr = StockMovementHelper.formatDateString12(
+                      (tx['created_at'] ?? tx['action_date'] ?? '').toString(),
+                    );
+                    final uphName = (tx['upholsterer_name'] ?? '').toString().trim();
 
-  // ---------------------------------------------------------------------------
-  // 2. نافذة الاستلام الذكية (Receive Modal)
-  // ---------------------------------------------------------------------------
-  void _openReceiveModal(Map<String, dynamic> initialBatch) {
-    final Map<String, dynamic> batch = Map<String, dynamic>.from(initialBatch);
-    List<Map<String, dynamic>> pieces = UpholstererStatementHelper.parseBatchPieces(batch);
-    int setsToReceive = 1;
-
-    void updateSetsToReceiveCount() {
-      final currentSetsSent = (batch['sets_sent'] as int?) ?? 1;
-      final currentSetsRec = (batch['sets_received'] as int?) ?? 0;
-      final currentSetsRem = (currentSetsSent - currentSetsRec) > 0 ? (currentSetsSent - currentSetsRec) : 0;
-
-      final maxSetsByPieces = pieces.isEmpty
-          ? 0
-          : pieces.map((p) {
-              final int pSent = (p['sent_qty'] as int?) ?? 1;
-              final int pRec = (p['received_qty'] as int?) ?? 0;
-              final int pRem = pSent - pRec;
-              final int bq = (p['base_qty'] as int?) ?? 1;
-              return pRem ~/ (bq > 0 ? bq : 1);
-            }).reduce(math.min);
-
-      final maxAllowedSets = math.min(currentSetsRem, maxSetsByPieces < 0 ? 0 : maxSetsByPieces);
-      if (maxAllowedSets <= 0) {
-        setsToReceive = 0;
-      } else if (setsToReceive > maxAllowedSets || setsToReceive <= 0) {
-        setsToReceive = 1;
-      }
-    }
-
-    updateSetsToReceiveCount();
-
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      useSafeArea: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setModalState) {
-          int batchSent = 0;
-          int batchRec = 0;
-          for (final p in pieces) {
-            batchSent += (p['sent_qty'] as int?) ?? 0;
-            batchRec += (p['received_qty'] as int?) ?? 0;
-          }
-          final int batchRemaining = batchSent - batchRec;
-          final bool isBatchFullyReceived = batchRemaining <= 0;
-
-          final int currentSetsSent = (batch['sets_sent'] as int?) ?? 1;
-          final int currentSetsRec = (batch['sets_received'] as int?) ?? 0;
-          final int currentSetsRem = (currentSetsSent - currentSetsRec) > 0 ? (currentSetsSent - currentSetsRec) : 0;
-
-          final int maxSetsByPieces = pieces.isEmpty
-              ? 0
-              : pieces.map((p) {
-                  final int pSent = (p['sent_qty'] as int?) ?? 1;
-                  final int pRec = (p['received_qty'] as int?) ?? 0;
-                  final int pRem = pSent - pRec;
-                  final int bq = (p['base_qty'] as int?) ?? 1;
-                  return pRem ~/ (bq > 0 ? bq : 1);
-                }).reduce(math.min);
-
-          final int maxAllowedSets = math.min(currentSetsRem, maxSetsByPieces < 0 ? 0 : maxSetsByPieces);
-          if (setsToReceive > maxAllowedSets) {
-            setsToReceive = maxAllowedSets;
-          }
-
-          return Padding(
-            padding: AppTheme.modalSheetPadding(ctx),
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  // رأس النافذة
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Row(
-                        children: [
-                          const Icon(Icons.assignment_turned_in_rounded, color: Colors.green, size: 26),
-                          const SizedBox(width: 8),
-                          Text(
-                            'استلام طقم: ${batch['category_name']}',
-                            style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: AppTheme.primaryNavy),
-                          ),
-                        ],
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.close),
-                        onPressed: () => Navigator.pop(ctx),
-                      ),
-                    ],
-                  ),
-                  Text(
-                    'المنجد: ${batch['upholsterer_name']} | تاريخ التسليم: ${batch['sent_date']} | إجمالي الأطقم المسلّمة: $currentSetsSent طقم',
-                    style: TextStyle(color: Colors.grey.shade700, fontSize: 13),
-                  ),
-                  const SizedBox(height: 14),
-
-                  // 1. تحديد عدد الأطقم المستلمة (مع زر الاستلام بجانبها)
-                  if (!isBatchFullyReceived && currentSetsRem > 0)
-                    Container(
-                      padding: const EdgeInsets.all(14),
+                    return Container(
+                      padding: const EdgeInsets.all(11),
                       decoration: BoxDecoration(
-                        gradient: const LinearGradient(
-                          colors: [AppTheme.primaryNavy, Color(0xFF28507D)],
+                        color: AppTheme.subtleBg(ctx),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: isReceiveTab
+                              ? AppTheme.successBorder(ctx)
+                              : AppTheme.infoBorder(ctx),
                         ),
-                        borderRadius: BorderRadius.circular(14),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.12),
-                            blurRadius: 6,
-                            offset: const Offset(0, 3),
-                          ),
-                        ],
                       ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
-                              const Row(
-                                children: [
-                                  Icon(Icons.inventory_2_rounded, color: AppTheme.royalGold, size: 22),
-                                  SizedBox(width: 8),
-                                  Text(
-                                    'تحديد عدد الأطقم المستلمة:',
-                                    style: TextStyle(color: AppTheme.royalGold, fontWeight: FontWeight.bold, fontSize: 15),
+                              Expanded(
+                                child: FittedBox(
+                                  fit: BoxFit.scaleDown,
+                                  alignment: AlignmentDirectional.centerStart,
+                                  child: Text(
+                                    '📅 $dateStr',
+                                    maxLines: 1,
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.bold,
+                                      color: AppTheme.textPrimary(ctx),
+                                    ),
                                   ),
-                                ],
+                                ),
                               ),
+                              const SizedBox(width: 8),
                               Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                                 decoration: BoxDecoration(
-                                  color: Colors.white24,
-                                  borderRadius: BorderRadius.circular(12),
+                                  color: isReceiveTab ? Colors.green.shade700 : AppTheme.primaryNavy,
+                                  borderRadius: BorderRadius.circular(8),
                                 ),
                                 child: Text(
-                                  'المتبقي: $currentSetsRem طقم ($batchRemaining قطعة)',
-                                  style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 12),
-                          Row(
-                            children: [
-                              // عداد الأطقم المستلمة
-                              Container(
-                                decoration: BoxDecoration(
-                                  color: Colors.white,
-                                  borderRadius: BorderRadius.circular(10),
-                                ),
-                                child: Row(
-                                  children: [
-                                    IconButton(
-                                      icon: const Icon(Icons.remove, color: Colors.red),
-                                      onPressed: setsToReceive > 0
-                                          ? () => setModalState(() => setsToReceive--)
-                                          : null,
-                                    ),
-                                    Container(
-                                      constraints: const BoxConstraints(minWidth: 36),
-                                      alignment: Alignment.center,
-                                      child: Text(
-                                        '$setsToReceive',
-                                        style: const TextStyle(
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 20,
-                                          color: AppTheme.primaryNavy,
-                                        ),
-                                      ),
-                                    ),
-                                    IconButton(
-                                      icon: const Icon(Icons.add, color: Colors.green),
-                                      onPressed: setsToReceive < maxAllowedSets
-                                          ? () => setModalState(() => setsToReceive++)
-                                          : null,
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              // زر استلام الأطقم المحددة بجانب العداد
-                              Expanded(
-                                child: ElevatedButton.icon(
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: setsToReceive > 0 ? AppTheme.royalGold : Colors.grey.shade400,
-                                    foregroundColor: AppTheme.primaryNavy,
-                                    padding: const EdgeInsets.symmetric(vertical: 12),
-                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                                  ),
-                                  onPressed: setsToReceive > 0
-                                      ? () => _confirmReceiveSets(
-                                            batch: batch,
-                                            pieces: pieces,
-                                            setsCount: setsToReceive,
-                                            modalCtx: ctx,
-                                            setModalState: setModalState,
-                                            onStateReset: updateSetsToReceiveCount,
-                                          )
-                                      : null,
-                                  icon: const Icon(Icons.check_circle_rounded),
-                                  label: Text(
-                                    setsToReceive > 0 ? 'استلام ($setsToReceive) طقم' : 'حدد عدد الأطقم',
-                                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                                  label,
+                                  maxLines: 1,
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 11.5,
+                                    fontWeight: FontWeight.bold,
                                   ),
                                 ),
                               ),
                             ],
                           ),
-                          if (maxAllowedSets < currentSetsRem) ...[
-                            const SizedBox(height: 6),
+                          if (uphName.isNotEmpty) ...[
+                            const SizedBox(height: 4),
                             Text(
-                              'ملاحظة: تم استلام بعض القطع منفرداً، لذا أقصى عدد أطقم مكتملة القطع حالياً هو ($maxAllowedSets) طقم.',
-                              style: const TextStyle(color: Colors.white70, fontSize: 11),
+                              'المنجد: $uphName • إجمالي القطع: ${summary.totalPieces} قطعة',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(fontSize: 11.5, color: AppTheme.textMuted(ctx)),
                             ),
                           ],
+                          const SizedBox(height: 6),
+                          Wrap(
+                            spacing: 6,
+                            runSpacing: 6,
+                            children: txPieces.map((p) {
+                              final pName = (p['name'] ?? '').toString();
+                              final pQty = CategoryStockHelper.parseInt(p['qty']);
+                              return Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: AppTheme.cardBg(ctx),
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(color: AppTheme.borderColor(ctx)),
+                                ),
+                                child: Text(
+                                  '$pName: $pQty',
+                                  style: TextStyle(
+                                    fontSize: 11.5,
+                                    fontWeight: FontWeight.bold,
+                                    color: AppTheme.textBody(ctx),
+                                  ),
+                                ),
+                              );
+                            }).toList(),
+                          ),
                         ],
                       ),
-                    )
-                  else
-                    Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: Colors.green.shade50,
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: Colors.green.shade300),
+                    );
+                  },
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// نافذة التنفيذ المباشرة عند الضغط على أي طقم (في تاب استلام أو تاب تسليم)
+  /// بدون خانة اختيار اسم الطقم (لأنه مختار مباشرة من الكارت) + زر "تنفيذ"
+  void _openActionModal({
+    required Map<String, dynamic> category,
+    required bool isReceive,
+  }) {
+    final String catName = (category['name'] ?? '').toString().trim();
+    final batch = _findMergedBatchForCategory(category);
+    final workshopPieces = _buildCategoryWorkshopPieces(category, batch);
+    final catComps = CategoryStockHelper.parseComponents(category['components_json']);
+
+    final remBreakdown = CategoryStockHelper.computeBreakdownFromPieces(
+      workshopPieces,
+      qtyKey: 'sent_qty',
+      subtractKey: 'received_qty',
+      expectedComponentCount: catComps.length,
+    );
+
+    if (isReceive && remBreakdown.totalPieces <= 0) {
+      AppNotification.showInfo(
+        context,
+        'لا يوجد رصيد متبقٍ من طقم "$catName" لدى المنجد لاستلامه حالياً.',
+      );
+      return;
+    }
+
+    final defaultUphName = (batch?['upholsterer_name'] ?? '').toString().trim();
+    final uphNameCtrl = TextEditingController(
+      text: defaultUphName.isNotEmpty ? defaultUphName : '',
+    );
+    final previousUpholsterers = _collectPreviousUpholsterers();
+
+    int setsCount = isReceive ? (remBreakdown.completeSets > 0 ? 1 : 0) : 1;
+    final setsCtrl = TextEditingController(text: '$setsCount');
+
+    final List<_PieceInputItem> pieceItems = workshopPieces.map((wp) {
+      final pName = (wp['name'] ?? '').toString();
+      final baseQ = math.max(1, CategoryStockHelper.parseInt(wp['base_qty'], fallback: 1));
+      final remQ = math.max(
+        0,
+        CategoryStockHelper.parseInt(wp['sent_qty']) - CategoryStockHelper.parseInt(wp['received_qty']),
+      );
+      final int initialQ = isReceive
+          ? math.min(remQ, setsCount * baseQ)
+          : setsCount * baseQ;
+      return _PieceInputItem(
+        name: pName,
+        baseQty: baseQ,
+        initialQty: initialQ,
+        maxAllowed: isReceive ? remQ : -1,
+      );
+    }).toList();
+
+    bool isSaving = false;
+
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setModalState) {
+          void syncSets(int n) {
+            int clamped = n < 0 ? 0 : n;
+            if (isReceive && clamped > remBreakdown.completeSets) {
+              clamped = remBreakdown.completeSets;
+            }
+            setsCount = clamped;
+            setsCtrl.text = '$setsCount';
+            for (final p in pieceItems) {
+              int target = setsCount * p.baseQty;
+              if (isReceive && p.maxAllowed >= 0 && target > p.maxAllowed) {
+                target = p.maxAllowed;
+              }
+              p.qtyCtrl.text = '$target';
+            }
+          }
+
+          // حساب المعاينة الحية للأطقم والقطع الفردية
+          final previewPieces = pieceItems.map((p) {
+            final q = math.max(0, int.tryParse(p.qtyCtrl.text.trim()) ?? 0);
+            return {'name': p.name, 'base_qty': p.baseQty, 'qty': q};
+          }).toList();
+          final liveBreak = CategoryStockHelper.computeBreakdownFromPieces(
+            previewPieces,
+            qtyKey: 'qty',
+            expectedComponentCount: catComps.length,
+          );
+          final liveText = CategoryStockHelper.formatSetsAndIndividual(
+            liveBreak.completeSets,
+            liveBreak.individualPieces,
+          );
+
+          return Padding(
+            padding: AppTheme.modalSheetPadding(ctx),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(
+                    children: [
+                      Icon(
+                        isReceive ? Icons.move_to_inbox_rounded : Icons.outbox_rounded,
+                        color: isReceive ? Colors.green.shade600 : AppTheme.accentOnSurface(ctx),
+                        size: 25,
                       ),
-                      child: const Row(
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          alignment: AlignmentDirectional.centerStart,
+                          child: Text(
+                            isReceive ? 'استلام من المنجد — $catName' : 'تسليم للمنجد — $catName',
+                            maxLines: 1,
+                            style: TextStyle(
+                              fontSize: 16.5,
+                              fontWeight: FontWeight.bold,
+                              color: AppTheme.textPrimary(ctx),
+                            ),
+                          ),
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.close),
+                        onPressed: isSaving ? null : () => Navigator.pop(ctx),
+                      ),
+                    ],
+                  ),
+                  if (isReceive) ...[
+                    const SizedBox(height: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                      decoration: BoxDecoration(
+                        color: AppTheme.warningBg(ctx),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: AppTheme.warningBorder(ctx)),
+                      ),
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        alignment: AlignmentDirectional.centerStart,
+                        child: Text(
+                          'المتبقي لدى المنجد: ${CategoryStockHelper.formatSetsAndIndividual(remBreakdown.completeSets, remBreakdown.individualPieces)} (${remBreakdown.totalPieces} قطعة)',
+                          maxLines: 1,
+                          style: TextStyle(
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.bold,
+                            color: AppTheme.warningFg(ctx),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 12),
+
+                  // اسم المنجد (اختياري أو اختيار سريع من السابقين)
+                  TextField(
+                    controller: uphNameCtrl,
+                    decoration: const InputDecoration(
+                      labelText: 'اسم المنجد / الورشة',
+                      hintText: 'اكتب اسم المنجد أو اختر من الأسفل',
+                      prefixIcon: Icon(Icons.person_outline_rounded),
+                    ),
+                  ),
+                  if (previousUpholsterers.isNotEmpty) ...[
+                    const SizedBox(height: 6),
+                    SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: Row(
+                        children: previousUpholsterers.take(6).map((name) {
+                          return Padding(
+                            padding: const EdgeInsetsDirectional.only(end: 6),
+                            child: ActionChip(
+                              visualDensity: VisualDensity.compact,
+                              label: Text(name, style: const TextStyle(fontSize: 12)),
+                              onPressed: () => setModalState(() => uphNameCtrl.text = name),
+                            ),
+                          );
+                        }).toList(),
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 12),
+
+                  // عداد عدد الأطقم الكاملة
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: AppTheme.subtleBg(ctx),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: AppTheme.borderColor(ctx)),
+                    ),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                isReceive ? 'عدد الأطقم المستلمة:' : 'عدد الأطقم المسلّمة:',
+                                maxLines: 1,
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 14,
+                                  color: AppTheme.textPrimary(ctx),
+                                ),
+                              ),
+                              if (isReceive)
+                                Text(
+                                  'أقصى عدد أطقم مكتملة: ${remBreakdown.completeSets}',
+                                  maxLines: 1,
+                                  style: TextStyle(fontSize: 11, color: AppTheme.textMuted(ctx)),
+                                ),
+                            ],
+                          ),
+                        ),
+                        Material(
+                          color: Colors.red.withValues(alpha: 0.14),
+                          borderRadius: BorderRadius.circular(10),
+                          child: InkWell(
+                            borderRadius: BorderRadius.circular(10),
+                            onTap: setsCount > 0 ? () => setModalState(() => syncSets(setsCount - 1)) : null,
+                            child: const Padding(
+                              padding: EdgeInsets.all(8.0),
+                              child: Icon(Icons.remove, color: Colors.red, size: 22),
+                            ),
+                          ),
+                        ),
+                        Container(
+                          width: 54,
+                          margin: const EdgeInsets.symmetric(horizontal: 6),
+                          child: TextField(
+                            controller: setsCtrl,
+                            keyboardType: TextInputType.number,
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                              color: AppTheme.textPrimary(ctx),
+                            ),
+                            decoration: const InputDecoration(
+                              isDense: true,
+                              contentPadding: EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+                            ),
+                            onChanged: (val) {
+                              final n = int.tryParse(val.trim());
+                              if (n != null && n >= 0) {
+                                setModalState(() => syncSets(n));
+                              }
+                            },
+                          ),
+                        ),
+                        Material(
+                          color: Colors.green.withValues(alpha: 0.16),
+                          borderRadius: BorderRadius.circular(10),
+                          child: InkWell(
+                            borderRadius: BorderRadius.circular(10),
+                            onTap: (!isReceive || setsCount < remBreakdown.completeSets)
+                                ? () => setModalState(() => syncSets(setsCount + 1))
+                                : null,
+                            child: const Padding(
+                              padding: EdgeInsets.all(8.0),
+                              child: Icon(Icons.add, color: Colors.green, size: 22),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+
+                  // قائمة القطع الفردية
+                  Text(
+                    'القطع (يمكنك تعديل أي قطعة فردياً):',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 13.5,
+                      color: AppTheme.textPrimary(ctx),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  ...pieceItems.map((piece) {
+                    final curQ = int.tryParse(piece.qtyCtrl.text.trim()) ?? 0;
+                    final bool canInc = !isReceive || piece.maxAllowed < 0 || curQ < piece.maxAllowed;
+                    return Container(
+                      margin: const EdgeInsets.only(bottom: 8),
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: AppTheme.cardBg(ctx),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: AppTheme.borderColor(ctx)),
+                      ),
+                      child: Row(
                         children: [
-                          Icon(Icons.check_circle, color: Colors.green, size: 24),
-                          SizedBox(width: 8),
+                          Icon(Icons.chair_rounded, color: AppTheme.accentOnSurface(ctx), size: 19),
+                          const SizedBox(width: 8),
                           Expanded(
-                            child: Text(
-                              'تم اكتمال استلام كامل هذا الطقم بجميع قطعه من المنجد بنجاح!',
-                              style: TextStyle(color: Colors.green, fontWeight: FontWeight.bold),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                FittedBox(
+                                  fit: BoxFit.scaleDown,
+                                  alignment: AlignmentDirectional.centerStart,
+                                  child: Text(
+                                    piece.name,
+                                    maxLines: 1,
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 14.5,
+                                      color: AppTheme.textPrimary(ctx),
+                                    ),
+                                  ),
+                                ),
+                                Text(
+                                  isReceive
+                                      ? 'متبقي لديه: ${piece.maxAllowed} • (${piece.baseQty} بالطقم)'
+                                      : 'النسبة: ${piece.baseQty} في الطقم الواحد',
+                                  maxLines: 1,
+                                  style: TextStyle(fontSize: 11, color: AppTheme.textMuted(ctx)),
+                                ),
+                              ],
+                            ),
+                          ),
+                          Material(
+                            color: Colors.red.withValues(alpha: 0.14),
+                            borderRadius: BorderRadius.circular(8),
+                            child: InkWell(
+                              borderRadius: BorderRadius.circular(8),
+                              onTap: curQ > 0
+                                  ? () => setModalState(() => piece.qtyCtrl.text = '${curQ - 1}')
+                                  : null,
+                              child: const Padding(
+                                padding: EdgeInsets.all(7.0),
+                                child: Icon(Icons.remove, color: Colors.red, size: 20),
+                              ),
+                            ),
+                          ),
+                          Container(
+                            width: 48,
+                            margin: const EdgeInsets.symmetric(horizontal: 4),
+                            child: TextField(
+                              controller: piece.qtyCtrl,
+                              keyboardType: TextInputType.number,
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 15.5,
+                                color: AppTheme.textPrimary(ctx),
+                              ),
+                              decoration: const InputDecoration(
+                                isDense: true,
+                                contentPadding: EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+                              ),
+                              onChanged: (val) {
+                                final parsed = int.tryParse(val.trim()) ?? 0;
+                                if (isReceive && piece.maxAllowed >= 0 && parsed > piece.maxAllowed) {
+                                  piece.qtyCtrl.text = '${piece.maxAllowed}';
+                                }
+                                setModalState(() {});
+                              },
+                            ),
+                          ),
+                          Material(
+                            color: Colors.green.withValues(alpha: 0.16),
+                            borderRadius: BorderRadius.circular(8),
+                            child: InkWell(
+                              borderRadius: BorderRadius.circular(8),
+                              onTap: canInc
+                                  ? () => setModalState(() => piece.qtyCtrl.text = '${curQ + 1}')
+                                  : null,
+                              child: Padding(
+                                padding: const EdgeInsets.all(7.0),
+                                child: Icon(
+                                  Icons.add,
+                                  color: canInc ? Colors.green : Colors.grey,
+                                  size: 20,
+                                ),
+                              ),
                             ),
                           ),
                         ],
-                      ),
-                    ),
-
-                  const SizedBox(height: 16),
-                  const Divider(),
-                  Row(
-                    children: [
-                      const Icon(Icons.view_list_rounded, color: AppTheme.primaryNavy, size: 20),
-                      const SizedBox(width: 6),
-                      const Text(
-                        'إجمالي قطع الطقم (نظام تفاعلي):',
-                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: AppTheme.primaryNavy),
-                      ),
-                      const Spacer(),
-                      if (setsToReceive > 0)
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: Colors.amber.shade100,
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Text(
-                            'يتم الخصم تلقائياً لـ ($setsToReceive) طقم',
-                            style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.amber.shade900),
-                          ),
-                        ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-
-                  // 2. قائمة القطع التفاعلية للاستلام
-                  ...pieces.asMap().entries.map((entry) {
-                    final idx = entry.key;
-                    final p = entry.value;
-                    final pName = p['name'] ?? 'قطعة';
-                    final int pSent = (p['sent_qty'] as int?) ?? 1;
-                    final int pRec = (p['received_qty'] as int?) ?? 0;
-                    final int pRem = pSent - pRec;
-                    final int baseQty = (p['base_qty'] as int?) ?? 1;
-                    final int deductedBySets = setsToReceive * (baseQty > 0 ? baseQty : 1);
-                    final int interactiveRem = pRem - deductedBySets;
-                    final bool isPieceDone = pRem <= 0;
-                    final pSentDate = p['sent_date'] ?? batch['sent_date'];
-                    final pRecDate = p['received_date'];
-
-                    return _PieceReceiveItemWidget(
-                      key: ValueKey('${batch['id']}_${pName}_${pRec}_${pRem}_${interactiveRem}_$setsToReceive'),
-                      pieceName: pName,
-                      baseQty: baseQty > 0 ? baseQty : 1,
-                      sentQty: pSent,
-                      receivedQty: pRec,
-                      remainingQty: pRem,
-                      deductedBySets: deductedBySets,
-                      interactiveRemaining: interactiveRem >= 0 ? interactiveRem : 0,
-                      sentDate: pSentDate?.toString() ?? '',
-                      receivedDate: pRecDate?.toString(),
-                      isDone: isPieceDone,
-                      onReceivePieces: (qtyToReceive) => _confirmReceivePiece(
-                        batch: batch,
-                        pieces: pieces,
-                        pieceIndex: idx,
-                        qtyToReceive: qtyToReceive,
-                        modalCtx: ctx,
-                        setModalState: setModalState,
-                        onStateReset: updateSetsToReceiveCount,
                       ),
                     );
                   }),
-                  const SizedBox(height: 12),
+
+                  const SizedBox(height: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+                    decoration: BoxDecoration(
+                      color: isReceive ? AppTheme.successBg(ctx) : AppTheme.infoBg(ctx),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                        color: isReceive ? AppTheme.successBorder(ctx) : AppTheme.infoBorder(ctx),
+                      ),
+                    ),
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text(
+                        isReceive
+                            ? 'المحدد للاستلام: $liveText (${liveBreak.totalPieces} قطعة)'
+                            : 'المحدد للتسليم: $liveText (${liveBreak.totalPieces} قطعة)',
+                        maxLines: 1,
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13,
+                          color: isReceive ? AppTheme.successFg(ctx) : AppTheme.infoFg(ctx),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+
+                  // زر التنفيذ الرئيسي
+                  ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: isReceive ? Colors.green.shade700 : AppTheme.primaryNavy,
+                      foregroundColor: isReceive ? Colors.white : AppTheme.brightGold,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    onPressed: (isSaving || liveBreak.totalPieces <= 0)
+                        ? null
+                        : () async {
+                            setModalState(() => isSaving = true);
+                            final uphName = uphNameCtrl.text.trim().isNotEmpty
+                                ? uphNameCtrl.text.trim()
+                                : 'ورشة التنجيد';
+
+                            final selectedPieces = <Map<String, dynamic>>[];
+                            for (final p in pieceItems) {
+                              int q = math.max(0, int.tryParse(p.qtyCtrl.text.trim()) ?? 0);
+                              if (isReceive && p.maxAllowed >= 0 && q > p.maxAllowed) {
+                                q = p.maxAllowed;
+                              }
+                              if (q > 0) {
+                                selectedPieces.add({
+                                  'name': p.name,
+                                  'qty': q,
+                                  'base_qty': p.baseQty,
+                                });
+                              }
+                            }
+
+                            if (selectedPieces.isEmpty) {
+                              setModalState(() => isSaving = false);
+                              return;
+                            }
+
+                            final ok = isReceive
+                                ? await _executeReceive(
+                                    category: category,
+                                    existingBatch: batch,
+                                    upholstererName: uphName,
+                                    receivedPieces: selectedPieces,
+                                  )
+                                : await _executeSend(
+                                    category: category,
+                                    existingBatch: batch,
+                                    upholstererName: uphName,
+                                    sentPieces: selectedPieces,
+                                  );
+
+                            if (ok && ctx.mounted) {
+                              Navigator.pop(ctx);
+                            } else if (ctx.mounted) {
+                              setModalState(() => isSaving = false);
+                            }
+                          },
+                    icon: isSaving
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                          )
+                        : const Icon(Icons.check_circle_rounded),
+                    label: Text(
+                      isReceive ? 'تنفيذ الاستلام وإضافة للمخزن' : 'تنفيذ التسليم للمنجد',
+                      style: const TextStyle(fontSize: 15.5, fontWeight: FontWeight.bold),
+                    ),
+                  ),
                 ],
               ),
             ),
           );
         },
       ),
-    );
+    ).whenComplete(() {
+      uphNameCtrl.dispose();
+      setsCtrl.dispose();
+      for (final p in pieceItems) {
+        p.dispose();
+      }
+    });
   }
 
-  /// تأكيد استلام عدد محدد من الأطقم وإضافتها للمخزن مع تسجيل الحركة
-  Future<void> _confirmReceiveSets({
-    required Map<String, dynamic> batch,
-    required List<Map<String, dynamic>> pieces,
-    required int setsCount,
-    required BuildContext modalCtx,
-    required StateSetter setModalState,
-    required VoidCallback onStateReset,
+  /// تنفيذ عملية التسليم للمنجد مع الدمج التلقائي في سجل الصنف وتسجيلها في كشف الحساب والتفاصيل
+  Future<bool> _executeSend({
+    required Map<String, dynamic> category,
+    required Map<String, dynamic>? existingBatch,
+    required String upholstererName,
+    required List<Map<String, dynamic>> sentPieces,
   }) async {
-    final bool? confirm = await showDialog<bool>(
-      context: context,
-      builder: (dCtx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Row(
-          children: [
-            Icon(Icons.inventory_2_rounded, color: Colors.green, size: 28),
-            SizedBox(width: 8),
-            Text('تأكيد استلام أطقم', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-          ],
-        ),
-        content: Text(
-          'هل أنت متأكد من استلام عدد ($setsCount) طقم من "${batch['category_name']}" من المنجد "${batch['upholsterer_name']}"؟\n\nسيتم إضافة ($setsCount) طقم وكافة قطعها التأسيسية فوراً لرصيد المخزن وتسجيل حركة بذلك.',
-          style: const TextStyle(fontSize: 15),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dCtx, false),
-            child: const Text('إلغاء', style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold)),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.green,
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-            ),
-            onPressed: () => Navigator.pop(dCtx, true),
-            child: const Text('تأكيد الاستلام'),
-          ),
-        ],
-      ),
-    );
-
-    if (confirm != true) return;
-
-    final today = intl.DateFormat('yyyy-MM-dd').format(DateTime.now());
-
-    // تحديث قطع الدفعة بزيادة المستلم منها
-    for (final p in pieces) {
-      final baseQty = (p['base_qty'] as int?) ?? 1;
-      final addQty = setsCount * (baseQty > 0 ? baseQty : 1);
-      final currentRec = (p['received_qty'] as int?) ?? 0;
-      p['received_qty'] = currentRec + addQty;
-      p['received_date'] = today;
-    }
-
-    final int oldSetsRec = (batch['sets_received'] as int?) ?? 0;
-    final int newSetsRec = oldSetsRec + setsCount;
-    int newBatchRec = 0;
-    int newBatchSent = 0;
-    for (final p in pieces) {
-      newBatchRec += (p['received_qty'] as int?) ?? 0;
-      newBatchSent += (p['sent_qty'] as int?) ?? 0;
-    }
-
-    final db = await DBHelper.instance.database;
-    final originalBatchSnapshot = Map<String, dynamic>.from(batch);
-    // حفظ أي استلام قديم قبل تحديث التواريخ على قطع الدفعة
-    final oldPieceSnapshots = await db.query('upholsterer_batches', where: 'id = ?', whereArgs: [batch['id']]);
-    if (oldPieceSnapshots.isNotEmpty) {
-      await _ensureHistoricalReceiveTrackedIfNeeded(db, oldPieceSnapshots.first);
-    } else {
-      await _ensureHistoricalReceiveTrackedIfNeeded(db, originalBatchSnapshot);
-    }
-
-    await db.update(
-      'upholsterer_batches',
-      {
-        'sets_received': newSetsRec,
-        'received_qty': newBatchRec,
-        'received_date': today,
-        'pieces_json': jsonEncode(pieces),
-      },
-      where: 'id = ?',
-      whereArgs: [batch['id']],
-    );
-
     try {
-      int totalTxPieces = 0;
-      final txPieces = <Map<String, dynamic>>[];
-      for (final p in pieces) {
-        final baseQty = (p['base_qty'] as int?) ?? 1;
-        final safeBase = baseQty > 0 ? baseQty : 1;
-        final addQty = setsCount * safeBase;
-        totalTxPieces += addQty;
-        txPieces.add({
-          'name': (p['name'] ?? '').toString().trim(),
-          'qty': addQty,
-          'base_qty': safeBase,
+      final db = await DBHelper.instance.database;
+      final int catId = CategoryStockHelper.parseInt(category['id']);
+      final String catName = (category['name'] ?? '').toString().trim();
+      final today = UpholstererStatementHelper.formatIsoDate(DateTime.now());
+      final now12 = StockMovementHelper.formatDateTime12(DateTime.now());
+      final catComps = CategoryStockHelper.parseComponents(category['components_json']);
+
+      final sendBreak = CategoryStockHelper.computeBreakdownFromPieces(
+        sentPieces,
+        qtyKey: 'qty',
+        expectedComponentCount: catComps.length,
+      );
+
+      final List<Map<String, dynamic>> mergedPieces =
+          _buildCategoryWorkshopPieces(category, existingBatch);
+
+      for (final sp in sentPieces) {
+        final pName = (sp['name'] ?? '').toString().trim();
+        final addQty = CategoryStockHelper.parseInt(sp['qty']);
+        final bQty = math.max(1, CategoryStockHelper.parseInt(sp['base_qty'], fallback: 1));
+        final idx = mergedPieces.indexWhere((m) => (m['name'] ?? '').toString().trim() == pName);
+        if (idx != -1) {
+          mergedPieces[idx]['sent_qty'] =
+              CategoryStockHelper.parseInt(mergedPieces[idx]['sent_qty']) + addQty;
+          mergedPieces[idx]['sent_date'] = today;
+        } else {
+          mergedPieces.add({
+            'name': pName,
+            'base_qty': bQty,
+            'sent_qty': addQty,
+            'received_qty': 0,
+            'sent_date': today,
+            'received_date': null,
+          });
+        }
+      }
+
+      int totalSent = 0;
+      int totalRec = 0;
+      for (final mp in mergedPieces) {
+        totalSent += CategoryStockHelper.parseInt(mp['sent_qty']);
+        totalRec += CategoryStockHelper.parseInt(mp['received_qty']);
+      }
+      final totalSentSets = CategoryStockHelper.computeBreakdownFromPieces(
+        mergedPieces,
+        qtyKey: 'sent_qty',
+        expectedComponentCount: catComps.length,
+      ).completeSets;
+      final totalRecSets = CategoryStockHelper.computeBreakdownFromPieces(
+        mergedPieces,
+        qtyKey: 'received_qty',
+        expectedComponentCount: catComps.length,
+      ).completeSets;
+
+      int batchId = 0;
+      await db.transaction((txn) async {
+        if (existingBatch != null) {
+          batchId = existingBatch['id'] as int;
+          await txn.update(
+            'upholsterer_batches',
+            {
+              'upholsterer_name': upholstererName,
+              'total_sent': totalSent,
+              'received_qty': totalRec,
+              'sets_sent': totalSentSets,
+              'sets_received': totalRecSets,
+              'sent_date': today,
+              'pieces_json': jsonEncode(mergedPieces),
+            },
+            where: 'id = ?',
+            whereArgs: [batchId],
+          );
+        } else {
+          batchId = await txn.insert('upholsterer_batches', {
+            'upholsterer_name': upholstererName,
+            'category_id': catId,
+            'category_name': catName,
+            'piece_name': sentPieces.first['name'],
+            'total_sent': totalSent,
+            'received_qty': totalRec,
+            'sent_date': today,
+            'received_date': null,
+            'sets_sent': totalSentSets,
+            'sets_received': totalRecSets,
+            'pieces_json': jsonEncode(mergedPieces),
+          });
+        }
+
+        await txn.insert('upholsterer_transactions', {
+          'batch_id': batchId,
+          'upholsterer_name': upholstererName,
+          'category_id': catId,
+          'category_name': catName,
+          'action_type': 'send',
+          'sets_count': sendBreak.completeSets,
+          'pieces_json': jsonEncode(sentPieces),
+          'total_pieces': sendBreak.totalPieces,
+          'action_date': today,
+          'created_at': now12,
         });
-      }
-      await db.insert('upholsterer_transactions', {
-        'batch_id': batch['id'],
-        'upholsterer_name': (batch['upholsterer_name'] ?? '').toString(),
-        'category_id': batch['category_id'],
-        'category_name': batch['category_name'],
-        'action_type': 'receive',
-        'sets_count': setsCount,
-        'pieces_json': jsonEncode(txPieces),
-        'total_pieces': totalTxPieces,
-        'action_date': UpholstererStatementHelper.formatIsoDate(DateTime.now()),
-        'created_at': StockMovementHelper.formatDateTime12(DateTime.now()),
       });
-    } catch (_) {}
 
-    // إضافة الأطقم وقطعها إلى جدول categories
-    final catRows = await db.query('categories', where: 'id = ?', whereArgs: [batch['category_id']]);
-    int newStock = setsCount;
-    if (catRows.isNotEmpty) {
-      final currentStock = (catRows.first['stock_qty'] as int?) ?? 0;
-      newStock = currentStock + setsCount;
-      List catComps = [];
-      try {
-        catComps = jsonDecode((catRows.first['components_json'] ?? '[]').toString());
-      } catch (_) {}
-
-      for (final p in pieces) {
-        final String pName = (p['name'] ?? '').toString().trim();
-        final baseQty = (p['base_qty'] as int?) ?? 1;
-        final addQty = setsCount * (baseQty > 0 ? baseQty : 1);
-        bool found = false;
-        for (final cc in catComps) {
-          if ((cc['name'] ?? '').toString().trim() == pName) {
-            final oldQ = (cc['qty'] as int?) ?? 0;
-            cc['qty'] = oldQ + addQty;
-            found = true;
-            break;
-          }
-        }
-        if (!found) {
-          catComps.add({'name': pName, 'base_qty': baseQty, 'qty': addQty});
-        }
-      }
-
-      newStock = CategoryStockHelper.calculateCompleteSets({'components_json': jsonEncode(catComps)});
-
-      await db.update(
-        'categories',
-        {
-          'stock_qty': newStock,
-          'components_json': jsonEncode(catComps),
-        },
-        where: 'id = ?',
-        whereArgs: [batch['category_id']],
-      );
-
-      final piecesDelta = pieces.map((p) {
-        final bq = (p['base_qty'] as int?) ?? 1;
-        return {
-          'name': (p['name'] ?? '').toString().trim(),
-          'delta': setsCount * (bq > 0 ? bq : 1),
-        };
-      }).toList();
-
-      final timeStr = intl.DateFormat('hh:mm a').format(DateTime.now());
       await StockMovementHelper.logMovement(
-        categoryId: batch['category_id'],
-        categoryName: batch['category_name'],
-        movementType: 'upholsterer_in',
-        qtyChange: setsCount,
-        stockAfter: newStock,
-        piecesDelta: piecesDelta,
-        notes: 'استلام عدد ($setsCount) طقم من المنجد: ${batch['upholsterer_name']} وإضافتها للمخزن مع قطعها (الساعة $timeStr)',
+        categoryId: catId,
+        categoryName: catName,
+        movementType: 'upholsterer_out',
+        qtyChange: 0,
+        stockAfter: CategoryStockHelper.parseInt(category['stock_qty']),
+        notes: 'تسليم للمنجد: $uphNamePlaceholder (${CategoryStockHelper.formatSetsAndIndividual(sendBreak.completeSets, sendBreak.individualPieces)})'
+            .replaceFirst(uphNamePlaceholder, upholstererName),
       );
-    }
 
-    AppEvents.instance.notifyAll();
-
-    // جلب أحدث بيانات محدثة للدفعة من قاعدة البيانات لعكسها لحظياً في النافذة
-    final updatedRows = await db.query('upholsterer_batches', where: 'id = ?', whereArgs: [batch['id']]);
-    if (updatedRows.isNotEmpty) {
-      final fresh = updatedRows.first;
-      batch.clear();
-      batch.addAll(fresh);
-      pieces.clear();
-      pieces.addAll(UpholstererStatementHelper.parseBatchPieces(fresh));
-    } else {
-      batch['sets_received'] = newSetsRec;
-      batch['received_qty'] = newBatchRec;
-      batch['pieces_json'] = jsonEncode(pieces);
-    }
-
-    final int totalSetsSent = (batch['sets_sent'] as int?) ?? 1;
-    final int freshBatchRec = (batch['received_qty'] as int?) ?? newBatchRec;
-    final int freshSetsRec = (batch['sets_received'] as int?) ?? newSetsRec;
-    final bool allDone = (freshBatchRec >= newBatchSent) || (freshSetsRec >= totalSetsSent);
-
-    if (allDone) {
-      if (modalCtx.mounted) {
-        Navigator.pop(modalCtx);
-      }
+      AppEvents.instance.notifyAll();
       if (mounted) {
         AppNotification.showSuccess(
           context,
-          'تم استلام كامل الأطقم والقطع من المنجد وإضافتها للمخزن بنجاح!',
+          'تم تنفيذ تسليم ${CategoryStockHelper.formatSetsAndIndividual(sendBreak.completeSets, sendBreak.individualPieces)} من "$catName" بنجاح',
         );
       }
-    } else {
-      onStateReset();
-      setModalState(() {});
+      return true;
+    } catch (e) {
       if (mounted) {
-        AppNotification.showSuccess(
-          context,
-          'تم استلام عدد ($setsCount) طقم وتحديث البيانات ورصيد المخزن فوراً بنجاح',
-        );
+        AppNotification.showError(context, 'تعذر تنفيذ التسليم: $e');
       }
+      return false;
     }
   }
 
-  /// تأكيد استلام عدد محدد من قطعة معينة
-  Future<void> _confirmReceivePiece({
-    required Map<String, dynamic> batch,
-    required List<Map<String, dynamic>> pieces,
-    required int pieceIndex,
-    required int qtyToReceive,
-    required BuildContext modalCtx,
-    required StateSetter setModalState,
-    required VoidCallback onStateReset,
+  static const String uphNamePlaceholder = '__UPH__';
+
+  /// تنفيذ عملية الاستلام من المنجد مع إضافة القطع فوراً لمخزن المعرض وتسجيلها في كشف الحساب والتفاصيل
+  Future<bool> _executeReceive({
+    required Map<String, dynamic> category,
+    required Map<String, dynamic>? existingBatch,
+    required String upholstererName,
+    required List<Map<String, dynamic>> receivedPieces,
   }) async {
-    final p = pieces[pieceIndex];
-    final pName = (p['name'] ?? 'القطعة').toString();
-
-    final bool? confirm = await showDialog<bool>(
-      context: context,
-      builder: (dCtx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Row(
-          children: [
-            Icon(Icons.check_circle, color: Colors.green, size: 28),
-            SizedBox(width: 8),
-            Text('تأكيد استلام قطعة', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-          ],
-        ),
-        content: Text(
-          'هل أنت متأكد من استلام عدد ($qtyToReceive) من قطعة "$pName" من المنجد "${batch['upholsterer_name']}"؟\n\nسيتم إضافة هذا العدد فوراً لرصيد هذه القطعة في المخزن.',
-          style: const TextStyle(fontSize: 15),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dCtx, false),
-            child: const Text('إلغاء', style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold)),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.green,
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-            ),
-            onPressed: () => Navigator.pop(dCtx, true),
-            child: const Text('تأكيد الاستلام والإضافة للمخزن'),
-          ),
-        ],
-      ),
-    );
-
-    if (confirm != true) return;
-
-    final today = intl.DateFormat('yyyy-MM-dd').format(DateTime.now());
-    final currentRec = (p['received_qty'] as int?) ?? 0;
-    p['received_qty'] = currentRec + qtyToReceive;
-    p['received_date'] = today;
-
-    int newBatchRec = 0;
-    int newBatchSent = 0;
-    for (final item in pieces) {
-      newBatchRec += (item['received_qty'] as int?) ?? 0;
-      newBatchSent += (item['sent_qty'] as int?) ?? 0;
-    }
-
-    // تحقق مما إذا اكتمل طقم كامل نتيجة استلام هذه القطعة
-    int currentSetsRec = (batch['sets_received'] as int?) ?? 0;
-    int calculatedSetsRec = pieces.isEmpty
-        ? 0
-        : pieces.map((item) {
-            final ir = (item['received_qty'] as int?) ?? 0;
-            final bq = (item['base_qty'] as int?) ?? 1;
-            return ir ~/ (bq > 0 ? bq : 1);
-          }).reduce(math.min);
-
-    int newlyCompletedSets = 0;
-    if (calculatedSetsRec > currentSetsRec) {
-      newlyCompletedSets = calculatedSetsRec - currentSetsRec;
-      currentSetsRec = calculatedSetsRec;
-    }
-
-    final db = await DBHelper.instance.database;
-    final oldRows = await db.query('upholsterer_batches', where: 'id = ?', whereArgs: [batch['id']]);
-    if (oldRows.isNotEmpty) {
-      await _ensureHistoricalReceiveTrackedIfNeeded(db, oldRows.first);
-    }
-
-    await db.update(
-      'upholsterer_batches',
-      {
-        'sets_received': currentSetsRec,
-        'received_qty': newBatchRec,
-        'received_date': today,
-        'pieces_json': jsonEncode(pieces),
-      },
-      where: 'id = ?',
-      whereArgs: [batch['id']],
-    );
-
+    if (existingBatch == null) return false;
     try {
-      final int pieceBase = (p['base_qty'] as int?) ?? 1;
-      await db.insert('upholsterer_transactions', {
-        'batch_id': batch['id'],
-        'upholsterer_name': (batch['upholsterer_name'] ?? '').toString(),
-        'category_id': batch['category_id'],
-        'category_name': batch['category_name'],
-        'action_type': 'receive',
-        'sets_count': newlyCompletedSets,
-        'pieces_json': jsonEncode([
-          {
-            'name': pName.trim(),
-            'qty': qtyToReceive,
-            'base_qty': pieceBase > 0 ? pieceBase : 1,
-          }
-        ]),
-        'total_pieces': qtyToReceive,
-        'action_date': UpholstererStatementHelper.formatIsoDate(DateTime.now()),
-        'created_at': StockMovementHelper.formatDateTime12(DateTime.now()),
-      });
-    } catch (_) {}
+      final db = await DBHelper.instance.database;
+      final int catId = CategoryStockHelper.parseInt(category['id']);
+      final String catName = (category['name'] ?? '').toString().trim();
+      final int batchId = existingBatch['id'] as int;
+      final today = UpholstererStatementHelper.formatIsoDate(DateTime.now());
+      final now12 = StockMovementHelper.formatDateTime12(DateTime.now());
+      final catComps = CategoryStockHelper.parseComponents(category['components_json']);
 
-    // إضافة رصيد هذه القطعة المستلمة فوراً إلى رصيد القطعة بجدول المخزن
-    final catRows = await db.query('categories', where: 'id = ?', whereArgs: [batch['category_id']]);
-    int currentCatStock = 0;
-    if (catRows.isNotEmpty) {
-      currentCatStock = (catRows.first['stock_qty'] as int?) ?? 0;
-      List catComps = [];
-      try {
-        catComps = jsonDecode((catRows.first['components_json'] ?? '[]').toString());
-      } catch (_) {}
+      final recBreak = CategoryStockHelper.computeBreakdownFromPieces(
+        receivedPieces,
+        qtyKey: 'qty',
+        expectedComponentCount: catComps.length,
+      );
 
-      bool found = false;
-      for (final cc in catComps) {
-        if ((cc['name'] ?? '').toString().trim() == pName.trim()) {
-          final oldQ = (cc['qty'] as int?) ?? 0;
-          cc['qty'] = oldQ + qtyToReceive;
-          found = true;
-          break;
+      final mergedPieces = _buildCategoryWorkshopPieces(category, existingBatch);
+      for (final rp in receivedPieces) {
+        final pName = (rp['name'] ?? '').toString().trim();
+        final addRec = CategoryStockHelper.parseInt(rp['qty']);
+        final idx = mergedPieces.indexWhere((m) => (m['name'] ?? '').toString().trim() == pName);
+        if (idx != -1) {
+          final maxSent = CategoryStockHelper.parseInt(mergedPieces[idx]['sent_qty']);
+          final curRec = CategoryStockHelper.parseInt(mergedPieces[idx]['received_qty']);
+          mergedPieces[idx]['received_qty'] = math.min(maxSent, curRec + addRec);
+          mergedPieces[idx]['received_date'] = today;
         }
       }
-      if (!found) {
-        catComps.add({'name': pName.trim(), 'qty': qtyToReceive});
+
+      int totalSent = 0;
+      int totalRec = 0;
+      for (final mp in mergedPieces) {
+        totalSent += CategoryStockHelper.parseInt(mp['sent_qty']);
+        totalRec += CategoryStockHelper.parseInt(mp['received_qty']);
       }
+      final totalRecSets = CategoryStockHelper.computeBreakdownFromPieces(
+        mergedPieces,
+        qtyKey: 'received_qty',
+        expectedComponentCount: catComps.length,
+      ).completeSets;
 
-      int newCatStock = CategoryStockHelper.calculateCompleteSets({'components_json': jsonEncode(catComps)});
+      int newStockSets = CategoryStockHelper.parseInt(category['stock_qty']);
+      int oldStockSets = newStockSets;
 
-      await db.update(
-        'categories',
-        {
-          'stock_qty': newCatStock,
-          'components_json': jsonEncode(catComps),
-        },
-        where: 'id = ?',
-        whereArgs: [batch['category_id']],
-      );
-      currentCatStock = newCatStock;
-    }
+      await db.transaction((txn) async {
+        await txn.update(
+          'upholsterer_batches',
+          {
+            'upholsterer_name': upholstererName,
+            'total_sent': totalSent,
+            'received_qty': totalRec,
+            'sets_received': totalRecSets,
+            'received_date': today,
+            'pieces_json': jsonEncode(mergedPieces),
+          },
+          where: 'id = ?',
+          whereArgs: [batchId],
+        );
 
-    final timeStr = intl.DateFormat('hh:mm a').format(DateTime.now());
-    await StockMovementHelper.logMovement(
-      categoryId: batch['category_id'],
-      categoryName: batch['category_name'],
-      movementType: 'piece_add',
-      qtyChange: qtyToReceive,
-      stockAfter: currentCatStock,
-      piecesDelta: [
-        {'name': pName.trim(), 'delta': qtyToReceive},
-      ],
-      notes: 'استلام عدد ($qtyToReceive) من قطعة ($pName) من المنجد: ${batch['upholsterer_name']} وإضافتها للمخزن (الساعة $timeStr)',
-    );
+        await txn.insert('upholsterer_transactions', {
+          'batch_id': batchId,
+          'upholsterer_name': upholstererName,
+          'category_id': catId,
+          'category_name': catName,
+          'action_type': 'receive',
+          'sets_count': recBreak.completeSets,
+          'pieces_json': jsonEncode(receivedPieces),
+          'total_pieces': recBreak.totalPieces,
+          'action_date': today,
+          'created_at': now12,
+        });
 
-    if (newlyCompletedSets > 0) {
+        final catRows = await txn.query('categories', where: 'id = ?', whereArgs: [catId]);
+        if (catRows.isNotEmpty) {
+          oldStockSets = CategoryStockHelper.parseInt(catRows.first['stock_qty']);
+          final updatedCatComps = CategoryStockHelper.parseComponents(catRows.first['components_json']);
+          for (final rp in receivedPieces) {
+            final pName = (rp['name'] ?? '').toString().trim();
+            final addQ = CategoryStockHelper.parseInt(rp['qty']);
+            final bQ = math.max(1, CategoryStockHelper.parseInt(rp['base_qty'], fallback: 1));
+            final cIdx = updatedCatComps.indexWhere((c) => (c['name'] ?? '').toString().trim() == pName);
+            if (cIdx != -1) {
+              updatedCatComps[cIdx]['qty'] = CategoryStockHelper.parseInt(updatedCatComps[cIdx]['qty']) + addQ;
+            } else {
+              updatedCatComps.add({'name': pName, 'base_qty': bQ, 'qty': addQ});
+            }
+          }
+          newStockSets = CategoryStockHelper.computeBreakdownFromPieces(updatedCatComps).completeSets;
+          await txn.update(
+            'categories',
+            {
+              'stock_qty': newStockSets,
+              'components_json': jsonEncode(updatedCatComps),
+            },
+            where: 'id = ?',
+            whereArgs: [catId],
+          );
+        }
+      });
+
+      final piecesDelta = receivedPieces
+          .map((rp) => {
+                'name': (rp['name'] ?? '').toString().trim(),
+                'delta': CategoryStockHelper.parseInt(rp['qty']),
+              })
+          .toList();
+
       await StockMovementHelper.logMovement(
-        categoryId: batch['category_id'],
-        categoryName: batch['category_name'],
+        categoryId: catId,
+        categoryName: catName,
         movementType: 'upholsterer_in',
-        qtyChange: newlyCompletedSets,
-        stockAfter: currentCatStock,
-        notes: 'اكتمال عدد ($newlyCompletedSets) طقم بالمخزن نتيجة اكتمال استلام قطعه من المنجد (${batch['upholsterer_name']})',
+        qtyChange: newStockSets - oldStockSets,
+        stockAfter: newStockSets,
+        piecesDelta: piecesDelta,
+        notes:
+            'استلام من المنجد ($upholstererName): ${CategoryStockHelper.formatSetsAndIndividual(recBreak.completeSets, recBreak.individualPieces)}',
       );
-    }
 
-    AppEvents.instance.notifyAll();
-
-    // جلب أحدث بيانات محدثة للدفعة من قاعدة البيانات لعكسها لحظياً في النافذة
-    final updatedRows = await db.query('upholsterer_batches', where: 'id = ?', whereArgs: [batch['id']]);
-    if (updatedRows.isNotEmpty) {
-      final fresh = updatedRows.first;
-      batch.clear();
-      batch.addAll(fresh);
-      pieces.clear();
-      pieces.addAll(UpholstererStatementHelper.parseBatchPieces(fresh));
-    } else {
-      batch['sets_received'] = currentSetsRec;
-      batch['received_qty'] = newBatchRec;
-      batch['pieces_json'] = jsonEncode(pieces);
-    }
-
-    final int totalSetsSent = (batch['sets_sent'] as int?) ?? 1;
-    final int freshBatchRec = (batch['received_qty'] as int?) ?? newBatchRec;
-    final int freshSetsRec = (batch['sets_received'] as int?) ?? currentSetsRec;
-    final bool allDone = (freshBatchRec >= newBatchSent) || (freshSetsRec >= totalSetsSent);
-
-    if (allDone) {
-      if (modalCtx.mounted) {
-        Navigator.pop(modalCtx);
-      }
+      AppEvents.instance.notifyAll();
       if (mounted) {
         AppNotification.showSuccess(
           context,
-          'اكتمل استلام جميع قطع الطقم وتمت إضافتها بالكامل للمخزن بنجاح!',
+          'تم استلام ${CategoryStockHelper.formatSetsAndIndividual(recBreak.completeSets, recBreak.individualPieces)} من "$catName" وإضافتها للمخزن',
         );
       }
-    } else {
-      onStateReset();
-      setModalState(() {});
+      return true;
+    } catch (e) {
       if (mounted) {
-        AppNotification.showSuccess(
-          context,
-          'تم استلام عدد ($qtyToReceive) من "$pName" وتحديث البيانات فوراً بنجاح',
-        );
+        AppNotification.showError(context, 'تعذر تنفيذ الاستلام: $e');
       }
+      return false;
     }
   }
 
-  // ---------------------------------------------------------------------------
-  // 3. بناء واجهة الشاشة وفلاتر البحث
-  // ---------------------------------------------------------------------------
+  Widget _buildCategoryList({required bool isReceiveTab}) {
+    final normQuery = SearchableSelectFormField.normalizeArabic(_searchQuery);
+    final filteredCats = _categories.where((cat) {
+      if (normQuery.isEmpty) return true;
+      final name = SearchableSelectFormField.normalizeArabic((cat['name'] ?? '').toString());
+      return name.contains(normQuery);
+    }).toList();
+
+    return RefreshIndicator(
+      onRefresh: _load,
+      child: filteredCats.isEmpty
+          ? const RefreshableEmptyView(
+              child: Padding(
+                padding: EdgeInsets.all(24.0),
+                child: Text(
+                  'لا توجد أصناف مسجلة بعد.\nأضف الأصناف من تبويب (المخزن ➔ الأصناف ومكوناتها) لتظهر هنا تلقائياً.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 15),
+                ),
+              ),
+            )
+          : ListView.builder(
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: const EdgeInsets.fromLTRB(12, 10, 12, 24),
+              itemCount: filteredCats.length,
+              itemBuilder: (ctx, idx) {
+                final cat = filteredCats[idx];
+                final int catId = CategoryStockHelper.parseInt(cat['id']);
+                final String catName = (cat['name'] ?? '').toString().trim();
+                final bool isExpanded = _expandedCategoryIds.contains(catId);
+                final batch = _findMergedBatchForCategory(cat);
+                final workshopPieces = _buildCategoryWorkshopPieces(cat, batch);
+                final catComps = CategoryStockHelper.parseComponents(cat['components_json']);
+
+                final sentBreak = CategoryStockHelper.computeBreakdownFromPieces(
+                  workshopPieces,
+                  qtyKey: 'sent_qty',
+                  expectedComponentCount: catComps.length,
+                );
+                final recBreak = CategoryStockHelper.computeBreakdownFromPieces(
+                  workshopPieces,
+                  qtyKey: 'received_qty',
+                  expectedComponentCount: catComps.length,
+                );
+                final remBreak = CategoryStockHelper.computeBreakdownFromPieces(
+                  workshopPieces,
+                  qtyKey: 'sent_qty',
+                  subtractKey: 'received_qty',
+                  expectedComponentCount: catComps.length,
+                );
+
+                final bool hasRemaining = remBreak.totalPieces > 0;
+                final String remText = hasRemaining
+                    ? 'متبقي: ${CategoryStockHelper.formatSetsAndIndividual(remBreak.completeSets, remBreak.individualPieces)}'
+                    : 'لا يوجد رصيد لديه';
+
+                return Card(
+                  elevation: isExpanded ? 3 : 1.5,
+                  margin: const EdgeInsets.only(bottom: 10),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                    side: BorderSide(
+                      color: isExpanded
+                          ? AppTheme.brightGold
+                          : (hasRemaining ? AppTheme.royalGold.withValues(alpha: 0.45) : AppTheme.borderColor(context)),
+                      width: isExpanded ? 1.5 : 1.0,
+                    ),
+                  ),
+                  clipBehavior: Clip.antiAlias,
+                  child: InkWell(
+                    onTap: () => _openActionModal(category: cat, isReceive: isReceiveTab),
+                    child: Padding(
+                      padding: const EdgeInsets.all(11),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Row(
+                            children: [
+                              // 1. أفاتار الأطقم الكاملة المتبقية لدى المنجد
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+                                decoration: BoxDecoration(
+                                  gradient: LinearGradient(
+                                    colors: AppTheme.setsAvatarGradient(
+                                      context,
+                                      hasValue: remBreak.completeSets > 0,
+                                    ),
+                                  ),
+                                  borderRadius: BorderRadius.circular(10),
+                                  border: AppTheme.isDark(context)
+                                      ? Border.all(color: AppTheme.brightGold.withValues(alpha: 0.35))
+                                      : null,
+                                ),
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    const Text(
+                                      'الأطقم',
+                                      style: TextStyle(
+                                        fontSize: 9.5,
+                                        color: AppTheme.brightGold,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                    Text(
+                                      '${remBreak.completeSets}',
+                                      style: const TextStyle(
+                                        fontSize: 17,
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+
+                              // 2. أفاتار الفردي المتبقي لدى المنجد (قابل للضغط لعرض تفاصيل القطع)
+                              Material(
+                                color: Colors.transparent,
+                                child: InkWell(
+                                  borderRadius: BorderRadius.circular(10),
+                                  onTap: () => _showIndividualPiecesDialog(
+                                    categoryName: catName,
+                                    completeSets: remBreak.completeSets,
+                                    totalExcess: remBreak.individualPieces,
+                                    excessPieces: remBreak.excessPieces,
+                                  ),
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+                                    decoration: BoxDecoration(
+                                      gradient: LinearGradient(
+                                        colors: AppTheme.individualAvatarGradient(
+                                          context,
+                                          hasValue: remBreak.individualPieces > 0,
+                                        ),
+                                      ),
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
+                                    child: Column(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        const Text(
+                                          'فردي',
+                                          style: TextStyle(
+                                            fontSize: 9.5,
+                                            color: Colors.white,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                        Text(
+                                          '${remBreak.individualPieces}',
+                                          style: const TextStyle(
+                                            fontSize: 17,
+                                            fontWeight: FontWeight.bold,
+                                            color: Colors.white,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+
+                              // 3. اسم الطقم كاملاً بدون قص + الحالة في سطر واحد محكم
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    FittedBox(
+                                      fit: BoxFit.scaleDown,
+                                      alignment: AlignmentDirectional.centerStart,
+                                      child: Text(
+                                        catName,
+                                        maxLines: 1,
+                                        style: TextStyle(
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.bold,
+                                          color: AppTheme.textPrimary(context),
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    FittedBox(
+                                      fit: BoxFit.scaleDown,
+                                      alignment: AlignmentDirectional.centerStart,
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                                        decoration: BoxDecoration(
+                                          color: hasRemaining
+                                              ? AppTheme.warningBg(context)
+                                              : AppTheme.successBg(context),
+                                          borderRadius: BorderRadius.circular(6),
+                                          border: Border.all(
+                                            color: hasRemaining
+                                                ? AppTheme.warningBorder(context)
+                                                : AppTheme.successBorder(context),
+                                          ),
+                                        ),
+                                        child: Text(
+                                          remText,
+                                          maxLines: 1,
+                                          style: TextStyle(
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.bold,
+                                            color: hasRemaining
+                                                ? AppTheme.warningFg(context)
+                                                : AppTheme.successFg(context),
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+
+                              // 4. زر "تفاصيل" خارجي يعرض سجل حركات هذا التاب بالتاريخ
+                              OutlinedButton(
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: AppTheme.accentOnSurface(context),
+                                  side: BorderSide(
+                                    color: AppTheme.accentOnSurface(context).withValues(alpha: 0.6),
+                                  ),
+                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                  minimumSize: Size.zero,
+                                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(9)),
+                                ),
+                                onPressed: () => _openCategoryMovementsModal(
+                                  category: cat,
+                                  isReceiveTab: isReceiveTab,
+                                ),
+                                child: const Text(
+                                  'تفاصيل',
+                                  maxLines: 1,
+                                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                                ),
+                              ),
+                              const SizedBox(width: 2),
+
+                              // 5. سهم التوسيع لعرض ملخص التسليم لهذا الطقم
+                              IconButton(
+                                padding: EdgeInsets.zero,
+                                constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
+                                tooltip: isExpanded ? 'طي الملخص' : 'عرض ملخص التسليم',
+                                icon: Icon(
+                                  isExpanded
+                                      ? Icons.keyboard_arrow_up_rounded
+                                      : Icons.keyboard_arrow_down_rounded,
+                                  color: AppTheme.textMuted(context),
+                                  size: 24,
+                                ),
+                                onPressed: () {
+                                  setState(() {
+                                    if (isExpanded) {
+                                      _expandedCategoryIds.remove(catId);
+                                    } else {
+                                      _expandedCategoryIds.add(catId);
+                                    }
+                                  });
+                                },
+                              ),
+                            ],
+                          ),
+
+                          // ملخص التسليم والاستلام عند توسع الكارت
+                          if (isExpanded) ...[
+                            const SizedBox(height: 10),
+                            const Divider(height: 1),
+                            const SizedBox(height: 10),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                              decoration: BoxDecoration(
+                                color: AppTheme.subtleBg(context),
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(color: AppTheme.borderColor(context)),
+                              ),
+                              child: Row(
+                                children: [
+                                  Expanded(
+                                    child: _SummaryMiniCol(
+                                      title: 'المسلّم للمنجد',
+                                      value: CategoryStockHelper.formatSetsAndIndividual(
+                                        sentBreak.completeSets,
+                                        sentBreak.individualPieces,
+                                      ),
+                                      piecesText: '${sentBreak.totalPieces} قطعة',
+                                      color: AppTheme.infoFg(context),
+                                    ),
+                                  ),
+                                  Container(width: 1, height: 38, color: AppTheme.borderColor(context)),
+                                  Expanded(
+                                    child: _SummaryMiniCol(
+                                      title: 'المستلَم منه',
+                                      value: CategoryStockHelper.formatSetsAndIndividual(
+                                        recBreak.completeSets,
+                                        recBreak.individualPieces,
+                                      ),
+                                      piecesText: '${recBreak.totalPieces} قطعة',
+                                      color: AppTheme.successFg(context),
+                                    ),
+                                  ),
+                                  Container(width: 1, height: 38, color: AppTheme.borderColor(context)),
+                                  Expanded(
+                                    child: _SummaryMiniCol(
+                                      title: 'المتبقي لديه',
+                                      value: CategoryStockHelper.formatSetsAndIndividual(
+                                        remBreak.completeSets,
+                                        remBreak.individualPieces,
+                                      ),
+                                      piecesText: '${remBreak.totalPieces} قطعة',
+                                      color: AppTheme.warningFg(context),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(height: 10),
+                            Wrap(
+                              spacing: 6,
+                              runSpacing: 6,
+                              children: workshopPieces.map((wp) {
+                                final pName = (wp['name'] ?? '').toString();
+                                final pSent = CategoryStockHelper.parseInt(wp['sent_qty']);
+                                final pRec = CategoryStockHelper.parseInt(wp['received_qty']);
+                                final pRem = math.max(0, pSent - pRec);
+                                return Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+                                  decoration: BoxDecoration(
+                                    color: pRem > 0 ? AppTheme.warningBg(context) : AppTheme.cardBg(context),
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(
+                                      color: pRem > 0 ? AppTheme.warningBorder(context) : AppTheme.borderColor(context),
+                                    ),
+                                  ),
+                                  child: Text(
+                                    '$pName: سُلّم $pSent | استُلم $pRec | باقي $pRem',
+                                    maxLines: 1,
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.bold,
+                                      color: pRem > 0 ? AppTheme.warningFg(context) : AppTheme.textMuted(context),
+                                    ),
+                                  ),
+                                );
+                              }).toList(),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final list = _filteredBatches;
-
-    // تجميع أسماء الأصناف الفريدة للفلترة
-    final Set<String> availableCategories = _batches
-        .map((b) => (b['category_name'] ?? '').toString().trim())
-        .where((s) => s.isNotEmpty)
-        .toSet();
-
-    final bool hasActiveFilter = _searchUphName.trim().isNotEmpty ||
-        (_selectedCategoryFilter != null && _selectedCategoryFilter != 'all') ||
-        _statusFilter != 'all';
-
     return Scaffold(
       appBar: AppBar(
         title: const AppBarTitleWithLogo(title: 'الأصناف لدى المنجد'),
@@ -2190,11 +1726,17 @@ class _UpholstererScreenState extends State<UpholstererScreen> {
                 minimumSize: Size.zero,
                 tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                 elevation: 1,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10),
-                ),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
               ),
-              onPressed: _openAccountStatement,
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    fullscreenDialog: true,
+                    builder: (_) => const UpholstererStatementScreen(),
+                  ),
+                );
+              },
               icon: const Icon(Icons.receipt_long_rounded, size: 17),
               label: const Text(
                 'كشف حساب',
@@ -2203,1020 +1745,101 @@ class _UpholstererScreenState extends State<UpholstererScreen> {
             ),
           ),
         ],
+        bottom: TabBar(
+          controller: _tabController,
+          tabs: const [
+            Tab(icon: Icon(Icons.move_to_inbox_rounded), text: 'استلام'),
+            Tab(icon: Icon(Icons.outbox_rounded), text: 'تسليم'),
+          ],
+        ),
       ),
       body: Column(
         children: [
-          // شريط الفلاتر الذكي
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-            decoration: BoxDecoration(
-              color: AppTheme.filterBarBg(context),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.05),
-                  blurRadius: 4,
-                  offset: const Offset(0, 2),
-                ),
-              ],
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Row(
-                  children: [
-                    // فلتر اسم المنجد
-                    Expanded(
-                      flex: 3,
-                      child: TextField(
-                        controller: _searchUphCtrl,
-                        decoration: InputDecoration(
-                          hintText: 'بحث باسم المنجد...',
-                          prefixIcon: const Icon(Icons.search, size: 20),
-                          isDense: true,
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                          suffixIcon: _searchUphCtrl.text.isNotEmpty
-                              ? IconButton(
-                                  icon: const Icon(Icons.clear, size: 18),
-                                  onPressed: () {
-                                    setState(() {
-                                      _searchUphCtrl.clear();
-                                      _searchUphName = '';
-                                    });
-                                  },
-                                )
-                              : null,
-                        ),
-                        onChanged: (val) {
-                          setState(() {
-                            _searchUphName = val;
-                          });
-                        },
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-
-                    // فلتر الصنف / الطقم
-                    Expanded(
-                      flex: 2,
-                      child: DropdownButtonFormField<String>(
-                        value: _selectedCategoryFilter ?? 'all',
-                        isExpanded: true,
-                        decoration: InputDecoration(
-                          isDense: true,
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                        ),
-                        items: [
-                          const DropdownMenuItem<String>(
-                            value: 'all',
-                            child: Text('جميع الأطقم', overflow: TextOverflow.ellipsis),
-                          ),
-                          ...availableCategories.map((cat) {
-                            return DropdownMenuItem<String>(
-                              value: cat,
-                              child: Text(cat, overflow: TextOverflow.ellipsis),
-                            );
-                          }),
-                        ],
-                        onChanged: (val) {
-                          setState(() {
-                            _selectedCategoryFilter = val;
-                          });
-                        },
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-
-                // فلاتر الحالة ومسح الفلتر
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Row(
-                      children: [
-                        _FilterChip(
-                          label: 'الكل (${_batches.length})',
-                          isSelected: _statusFilter == 'all',
-                          onSelected: () => setState(() => _statusFilter = 'all'),
-                        ),
-                        const SizedBox(width: 6),
-                        _FilterChip(
-                          label: 'قيد العمل',
-                          isSelected: _statusFilter == 'in_progress',
-                          onSelected: () => setState(() => _statusFilter = 'in_progress'),
-                        ),
-                        const SizedBox(width: 6),
-                        _FilterChip(
-                          label: 'مكتملة',
-                          isSelected: _statusFilter == 'completed',
-                          onSelected: () => setState(() => _statusFilter = 'completed'),
-                        ),
-                      ],
-                    ),
-                    if (hasActiveFilter)
-                      TextButton.icon(
-                        style: TextButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                          foregroundColor: Colors.red.shade700,
-                        ),
+            padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
+            color: AppTheme.filterBarBg(context),
+            child: TextField(
+              controller: _searchCtrl,
+              decoration: InputDecoration(
+                hintText: 'بحث باسم الطقم / الصنف...',
+                prefixIcon: const Icon(Icons.search, size: 20),
+                isDense: true,
+                contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                suffixIcon: _searchQuery.isNotEmpty
+                    ? IconButton(
+                        icon: const Icon(Icons.clear, size: 18),
                         onPressed: () {
                           setState(() {
-                            _searchUphCtrl.clear();
-                            _searchUphName = '';
-                            _selectedCategoryFilter = 'all';
-                            _statusFilter = 'all';
+                            _searchCtrl.clear();
+                            _searchQuery = '';
                           });
                         },
-                        icon: const Icon(Icons.filter_alt_off, size: 16),
-                        label: const Text('مسح الفلاتر', style: TextStyle(fontSize: 12)),
-                      ),
-                  ],
-                ),
+                      )
+                    : null,
+              ),
+              onChanged: (v) => setState(() => _searchQuery = v),
+            ),
+          ),
+          Expanded(
+            child: TabBarView(
+              controller: _tabController,
+              children: [
+                _buildCategoryList(isReceiveTab: true),
+                _buildCategoryList(isReceiveTab: false),
               ],
             ),
           ),
-
-          // قائمة الدفعات
-          Expanded(
-            child: RefreshIndicator(
-              onRefresh: _load,
-              child: list.isEmpty
-                  ? RefreshableEmptyView(
-                      child: Padding(
-                        padding: const EdgeInsets.all(24.0),
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(
-                              hasActiveFilter ? Icons.search_off : Icons.handyman_outlined,
-                              size: 54,
-                              color: Colors.grey.shade400,
-                            ),
-                            const SizedBox(height: 12),
-                            Text(
-                              hasActiveFilter
-                                  ? 'لا توجد دفعات مطابقة لخيارات البحث المحددة.'
-                                  : 'لا توجد قطع لدى المنجد حالياً.\nاضغط على (تسليم للمنجد) بالأسفل لتسجيل دفعة جديدة.',
-                              textAlign: TextAlign.center,
-                              style: const TextStyle(color: Colors.grey, fontSize: 15),
-                            ),
-                          ],
-                        ),
-                      ),
-                    )
-                  : ListView.builder(
-                      physics: const AlwaysScrollableScrollPhysics(),
-                      padding: const EdgeInsets.only(left: 12, right: 12, top: 12, bottom: 85),
-                    itemCount: list.length,
-                    itemBuilder: (ctx, i) {
-                      final b = list[i];
-                      final int batchId = (b['id'] as int?) ?? i;
-                      final bool isExpanded = _expandedBatchIds.contains(batchId);
-                      final pieces = UpholstererStatementHelper.parseBatchPieces(b);
-                      final int sent = b['total_sent'] is int ? b['total_sent'] : (int.tryParse('${b['total_sent']}') ?? 0);
-                      final int rec = b['received_qty'] is int ? b['received_qty'] : (int.tryParse('${b['received_qty']}') ?? 0);
-                      final int rem = sent - rec;
-                      final bool isDone = rem <= 0;
-
-                      final sentBreak = pieces.isNotEmpty
-                          ? CategoryStockHelper.computeBreakdownFromPieces(pieces, qtyKey: 'sent_qty')
-                          : StockBreakdown(
-                              completeSets: (b['sets_sent'] as int?) ?? 1,
-                              individualPieces: 0,
-                              totalPieces: sent,
-                              excessPieces: const [],
-                            );
-                      final recBreak = pieces.isNotEmpty
-                          ? CategoryStockHelper.computeBreakdownFromPieces(pieces, qtyKey: 'received_qty')
-                          : StockBreakdown(
-                              completeSets: (b['sets_received'] as int?) ?? 0,
-                              individualPieces: 0,
-                              totalPieces: rec,
-                              excessPieces: const [],
-                            );
-                      final remBreak = pieces.isNotEmpty
-                          ? CategoryStockHelper.computeBreakdownFromPieces(
-                              pieces,
-                              qtyKey: 'sent_qty',
-                              subtractKey: 'received_qty',
-                            )
-                          : StockBreakdown(
-                              completeSets: math.max(0, sentBreak.completeSets - recBreak.completeSets),
-                              individualPieces: 0,
-                              totalPieces: math.max(0, rem),
-                              excessPieces: const [],
-                            );
-
-                      final int completeSetsSent = sentBreak.completeSets;
-                      final int individualExcessSent = sentBreak.individualPieces;
-                      final int completeSetsRec = recBreak.completeSets;
-                      final int individualExcessRec = recBreak.individualPieces;
-                      final int completeSetsRem = remBreak.completeSets;
-                      final int individualExcessRem = remBreak.individualPieces;
-                      final excessPiecesList = remBreak.excessPieces;
-
-                      String formatCount(int sets, int individual) {
-                        if (sets > 0 && individual > 0) {
-                          return '$sets طقم و $individual فردي';
-                        } else if (sets > 0) {
-                          return '$sets طقم';
-                        } else if (individual > 0) {
-                          return '$individual فردي';
-                        } else {
-                          return '0 طقم';
-                        }
-                      }
-
-                      final sentSummary = formatCount(completeSetsSent, individualExcessSent);
-                      final recSummary = formatCount(completeSetsRec, individualExcessRec);
-                      final remSummary = isDone ? 'مكتمل الاستلام' : formatCount(completeSetsRem, individualExcessRem);
-
-                      return Card(
-                        elevation: isExpanded ? 3 : 1.5,
-                        margin: const EdgeInsets.only(bottom: 10),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16),
-                          side: BorderSide(
-                            color: isDone
-                                ? Colors.green.shade200
-                                : (isExpanded ? AppTheme.royalGold : Colors.grey.shade300),
-                            width: isExpanded ? 1.5 : 1.0,
-                          ),
-                        ),
-                        child: InkWell(
-                          borderRadius: BorderRadius.circular(16),
-                          onTap: () {
-                            setState(() {
-                              if (isExpanded) {
-                                _expandedBatchIds.remove(batchId);
-                              } else {
-                                _expandedBatchIds.add(batchId);
-                              }
-                            });
-                          },
-                          child: Padding(
-                            padding: const EdgeInsets.all(12.0),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                // صف الملخص الرئيسي بنمط تصميم المخزن: أفاتار الأطقم + أفاتار الفردي + اسم الصنف والمنجد + أزرار
-                                Row(
-                                  children: [
-                                    // 1. أفاتار الأطقم المتبقية
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
-                                      decoration: BoxDecoration(
-                                        gradient: LinearGradient(
-                                          colors: completeSetsRem > 0
-                                              ? [AppTheme.primaryNavy, const Color(0xFF2B5282)]
-                                              : (isDone
-                                                  ? [Colors.green.shade700, Colors.green.shade600]
-                                                  : [Colors.grey.shade700, Colors.grey.shade600]),
-                                        ),
-                                        borderRadius: BorderRadius.circular(10),
-                                        boxShadow: [
-                                          BoxShadow(
-                                            color: Colors.black.withValues(alpha: 0.1),
-                                            blurRadius: 3,
-                                            offset: const Offset(0, 1),
-                                          ),
-                                        ],
-                                      ),
-                                      child: Column(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          const Text(
-                                            'الأطقم',
-                                            style: TextStyle(fontSize: 9.5, color: AppTheme.royalGold, fontWeight: FontWeight.bold),
-                                          ),
-                                          Text(
-                                            '$completeSetsRem',
-                                            style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: Colors.white),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                    const SizedBox(width: 6),
-
-                                    // 2. أفاتار الفردي (اضغط لعرض تفاصيل القطع الفردية المتبقية لدى المنجد كما في المخزن)
-                                    Material(
-                                      color: Colors.transparent,
-                                      child: InkWell(
-                                        borderRadius: BorderRadius.circular(10),
-                                        onTap: () {
-                                          _showUpholstererIndividualPiecesDialog(
-                                            context: context,
-                                            setName: (b['category_name'] ?? '').toString(),
-                                            upholstererName: (b['upholsterer_name'] ?? '').toString(),
-                                            completeSets: completeSetsRem,
-                                            totalExcess: individualExcessRem,
-                                            excessPieces: excessPiecesList,
-                                          );
-                                        },
-                                        child: Tooltip(
-                                          message: 'اضغط لعرض تفاصيل القطع الفردية المتبقية',
-                                          child: Container(
-                                            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
-                                            decoration: BoxDecoration(
-                                              gradient: LinearGradient(
-                                                colors: individualExcessRem > 0
-                                                    ? [const Color(0xFFD97706), const Color(0xFFB45309)]
-                                                    : [Colors.blueGrey.shade800, Colors.blueGrey.shade700],
-                                              ),
-                                              borderRadius: BorderRadius.circular(10),
-                                              boxShadow: [
-                                                BoxShadow(
-                                                  color: Colors.black.withValues(alpha: 0.1),
-                                                  blurRadius: 3,
-                                                  offset: const Offset(0, 1),
-                                                ),
-                                              ],
-                                            ),
-                                            child: Column(
-                                              mainAxisSize: MainAxisSize.min,
-                                              children: [
-                                                const Text(
-                                                  'فردي',
-                                                  style: TextStyle(fontSize: 9.5, color: Colors.white, fontWeight: FontWeight.bold),
-                                                ),
-                                                Text(
-                                                  '$individualExcessRem',
-                                                  style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: Colors.white),
-                                                ),
-                                              ],
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                    const SizedBox(width: 10),
-
-                                    // اسم الصنف واسم المنجد + حالة التوفر
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        children: [
-                                          Text(
-                                            'طقم: ${b['category_name']}',
-                                            style: const TextStyle(
-                                              fontWeight: FontWeight.bold,
-                                              fontSize: 15.5,
-                                              color: AppTheme.primaryNavy,
-                                            ),
-                                            overflow: TextOverflow.ellipsis,
-                                          ),
-                                          const SizedBox(height: 3),
-                                          Wrap(
-                                            spacing: 6,
-                                            runSpacing: 3,
-                                            crossAxisAlignment: WrapCrossAlignment.center,
-                                            children: [
-                                              Text(
-                                                'المنجد: ${b['upholsterer_name']}',
-                                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12.5, color: Colors.brown),
-                                              ),
-                                              Container(
-                                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                                decoration: BoxDecoration(
-                                                  color: isDone ? Colors.green.shade50 : (completeSetsRem > 0 ? Colors.blue.shade50 : Colors.amber.shade50),
-                                                  borderRadius: BorderRadius.circular(6),
-                                                  border: Border.all(
-                                                    color: isDone ? Colors.green.shade300 : (completeSetsRem > 0 ? Colors.blue.shade300 : Colors.amber.shade400),
-                                                  ),
-                                                ),
-                                                child: Text(
-                                                  isDone
-                                                      ? 'مكتمل الاستلام'
-                                                      : (completeSetsRem > 0
-                                                          ? 'متبقي ($completeSetsRem طقم${individualExcessRem > 0 ? " + $individualExcessRem فردي" : ""})'
-                                                          : (individualExcessRem > 0 ? 'متبقي $individualExcessRem فردي' : 'متبقي $rem قطعة')),
-                                                  style: TextStyle(
-                                                    fontSize: 10.5,
-                                                    fontWeight: FontWeight.bold,
-                                                    color: isDone
-                                                        ? Colors.green.shade800
-                                                        : (completeSetsRem > 0 ? AppTheme.primaryNavy : Colors.amber.shade900),
-                                                  ),
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                    const SizedBox(width: 6),
-                                    IconButton(
-                                      padding: EdgeInsets.zero,
-                                      constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-                                      tooltip: 'تعديل الصنف / الدفعة',
-                                      icon: const Icon(Icons.edit_outlined, size: 20, color: AppTheme.primaryNavy),
-                                      onPressed: () => _openEditBatchModal(b),
-                                    ),
-                                    const SizedBox(width: 4),
-                                    ElevatedButton.icon(
-                                      style: ElevatedButton.styleFrom(
-                                        backgroundColor: isDone ? Colors.green.shade700 : AppTheme.primaryNavy,
-                                        foregroundColor: isDone ? Colors.white : AppTheme.royalGold,
-                                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-                                        minimumSize: Size.zero,
-                                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                                      ),
-                                      onPressed: () => _openReceiveModal(b),
-                                      icon: Icon(
-                                        isDone ? Icons.check_circle_outline : Icons.assignment_turned_in_rounded,
-                                        size: 16,
-                                      ),
-                                      label: Text(
-                                        isDone ? 'تفاصيل' : 'استلام',
-                                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
-                                      ),
-                                    ),
-                                    const SizedBox(width: 2),
-                                    IconButton(
-                                      padding: EdgeInsets.zero,
-                                      constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-                                      tooltip: isExpanded ? 'طي التفاصيل' : 'توسيع التفاصيل',
-                                      icon: Icon(
-                                        isExpanded ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded,
-                                        color: Colors.grey.shade700,
-                                        size: 25,
-                                      ),
-                                      onPressed: () {
-                                        setState(() {
-                                          if (isExpanded) {
-                                            _expandedBatchIds.remove(batchId);
-                                          } else {
-                                            _expandedBatchIds.add(batchId);
-                                          }
-                                        });
-                                      },
-                                    ),
-                                  ],
-                                ),
-
-                                // تفاصيل الطقم تظهر عند الضغط والتوسع فقط
-                                if (isExpanded) ...[
-                                  const SizedBox(height: 10),
-                                  const Divider(height: 1),
-                                  const SizedBox(height: 10),
-
-                                  // 1. شريط نسبة الاستلام المنجز
-                                  ClipRRect(
-                                    borderRadius: BorderRadius.circular(6),
-                                    child: LinearProgressIndicator(
-                                      value: sent == 0 ? 0 : (rec / sent).clamp(0.0, 1.0),
-                                      minHeight: 7,
-                                      backgroundColor: Colors.grey.shade200,
-                                      valueColor: AlwaysStoppedAnimation<Color>(
-                                        isDone ? Colors.green : AppTheme.primaryNavy,
-                                      ),
-                                    ),
-                                  ),
-                                  const SizedBox(height: 10),
-
-                                  // 2. بطاقة الملخص الإجمالي: المسلّم، المستلم، المتبقي (أطقم + فردي)
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                                    decoration: BoxDecoration(
-                                      color: const Color(0xFFF8FAFC),
-                                      borderRadius: BorderRadius.circular(12),
-                                      border: Border.all(color: Colors.grey.shade300),
-                                    ),
-                                    child: Row(
-                                      children: [
-                                        // ما تم تسليمه للمنجد
-                                        Expanded(
-                                          child: Column(
-                                            children: [
-                                              const Row(
-                                                mainAxisAlignment: MainAxisAlignment.center,
-                                                children: [
-                                                  Icon(Icons.outbox_rounded, size: 14, color: Color(0xFF1E3A8A)),
-                                                  SizedBox(width: 4),
-                                                  Text('المسلّم للمنجد', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF1E3A8A))),
-                                                ],
-                                              ),
-                                              const SizedBox(height: 3),
-                                              Text(
-                                                sentSummary,
-                                                textAlign: TextAlign.center,
-                                                style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: AppTheme.primaryNavy),
-                                              ),
-                                              Text('($sent قطعة)', style: TextStyle(fontSize: 10, color: Colors.grey.shade600)),
-                                            ],
-                                          ),
-                                        ),
-                                        Container(width: 1, height: 42, color: Colors.grey.shade300),
-                                        // ما تم استلامه من المنجد
-                                        Expanded(
-                                          child: Column(
-                                            children: [
-                                              const Row(
-                                                mainAxisAlignment: MainAxisAlignment.center,
-                                                children: [
-                                                  Icon(Icons.move_to_inbox_rounded, size: 14, color: Color(0xFF047857)),
-                                                  SizedBox(width: 4),
-                                                  Text('المستلَم منه', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF047857))),
-                                                ],
-                                              ),
-                                              const SizedBox(height: 3),
-                                              Text(
-                                                recSummary,
-                                                textAlign: TextAlign.center,
-                                                style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: Color(0xFF047857)),
-                                              ),
-                                              Text('($rec قطعة)', style: TextStyle(fontSize: 10, color: Colors.grey.shade600)),
-                                            ],
-                                          ),
-                                        ),
-                                        Container(width: 1, height: 42, color: Colors.grey.shade300),
-                                        // المتبقي لدى المنجد
-                                        Expanded(
-                                          child: Column(
-                                            children: [
-                                              Row(
-                                                mainAxisAlignment: MainAxisAlignment.center,
-                                                children: [
-                                                  Icon(
-                                                    isDone ? Icons.check_circle_rounded : Icons.pending_actions_rounded,
-                                                    size: 14,
-                                                    color: isDone ? Colors.green.shade700 : const Color(0xFFB45309),
-                                                  ),
-                                                  const SizedBox(width: 4),
-                                                  Text(
-                                                    'المتبقي لديه',
-                                                    style: TextStyle(
-                                                      fontSize: 11,
-                                                      fontWeight: FontWeight.bold,
-                                                      color: isDone ? Colors.green.shade700 : const Color(0xFFB45309),
-                                                    ),
-                                                  ),
-                                                ],
-                                              ),
-                                              const SizedBox(height: 3),
-                                              Text(
-                                                remSummary,
-                                                textAlign: TextAlign.center,
-                                                style: TextStyle(
-                                                  fontSize: 12.5,
-                                                  fontWeight: FontWeight.bold,
-                                                  color: isDone ? Colors.green.shade800 : const Color(0xFFB45309),
-                                                ),
-                                              ),
-                                              Text(isDone ? '(مكتمل)' : '($rem قطعة)', style: TextStyle(fontSize: 10, color: Colors.grey.shade600)),
-                                            ],
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                  const SizedBox(height: 10),
-
-                                  // 3. بطاقة حالة القطع التفصيلية
-                                  Row(
-                                    children: [
-                                      const Icon(Icons.chair_rounded, size: 16, color: AppTheme.primaryNavy),
-                                      const SizedBox(width: 6),
-                                      const Text(
-                                        'تفاصيل القطع لدى المنجد:',
-                                        style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: AppTheme.primaryNavy),
-                                      ),
-                                      const Spacer(),
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                                        decoration: BoxDecoration(
-                                          color: isDone ? Colors.green.shade50 : Colors.amber.shade50,
-                                          borderRadius: BorderRadius.circular(6),
-                                          border: Border.all(
-                                            color: isDone ? Colors.green.shade300 : Colors.amber.shade300,
-                                          ),
-                                        ),
-                                        child: Text(
-                                          isDone ? 'مكتمل الاستلام' : 'المتبقي: $remSummary ($rem قطعة)',
-                                          style: TextStyle(
-                                            fontSize: 11,
-                                            fontWeight: FontWeight.bold,
-                                            color: isDone ? Colors.green.shade800 : Colors.amber.shade900,
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 8),
-
-                                  // شبكة بطاقات القطع الذكية والموجزة
-                                  Wrap(
-                                    spacing: 8,
-                                    runSpacing: 8,
-                                    children: pieces.map((p) {
-                                      final pName = (p['name'] ?? 'قطعة').toString();
-                                      final int pSent = (p['sent_qty'] as int?) ?? 1;
-                                      final int pRec = (p['received_qty'] as int?) ?? 0;
-                                      final int pRem = math.max(0, pSent - pRec);
-                                      final bool pDone = pRem == 0;
-
-                                      return Container(
-                                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-                                        decoration: BoxDecoration(
-                                          color: pDone
-                                              ? const Color(0xFFF0FDF4)
-                                              : (pRec > 0 ? const Color(0xFFFFFBEB) : Colors.white),
-                                          borderRadius: BorderRadius.circular(10),
-                                          border: Border.all(
-                                            color: pDone
-                                                ? Colors.green.shade300
-                                                : (pRec > 0 ? Colors.amber.shade300 : Colors.grey.shade300),
-                                          ),
-                                        ),
-                                        child: Row(
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            Icon(
-                                              pDone
-                                                  ? Icons.check_circle_rounded
-                                                  : (pRec > 0 ? Icons.timelapse_rounded : Icons.chair_rounded),
-                                              size: 15,
-                                              color: pDone
-                                                  ? Colors.green.shade700
-                                                  : (pRec > 0 ? const Color(0xFFD97706) : AppTheme.primaryNavy),
-                                            ),
-                                            const SizedBox(width: 6),
-                                            Text(
-                                              pName,
-                                              style: TextStyle(
-                                                fontWeight: FontWeight.bold,
-                                                fontSize: 12.5,
-                                                color: pDone ? Colors.green.shade900 : AppTheme.primaryNavy,
-                                              ),
-                                            ),
-                                            const SizedBox(width: 8),
-                                            Container(
-                                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                              decoration: BoxDecoration(
-                                                color: pDone
-                                                    ? Colors.green.shade700
-                                                    : (pRec > 0 ? const Color(0xFFD97706) : AppTheme.primaryNavy),
-                                                borderRadius: BorderRadius.circular(6),
-                                              ),
-                                              child: Text(
-                                                pDone
-                                                    ? 'مكتمل ($pSent)'
-                                                    : 'استلم $pRec من $pSent (باقي $pRem)',
-                                                style: const TextStyle(
-                                                  color: Colors.white,
-                                                  fontSize: 10.5,
-                                                  fontWeight: FontWeight.bold,
-                                                ),
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      );
-                                    }).toList(),
-                                  ),
-                                  const SizedBox(height: 12),
-
-                                  // أسفل البطاقة: الإجمالي وزر الاستلام وزر الحذف
-                                  Row(
-                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                    children: [
-                                      IconButton(
-                                        tooltip: 'حذف هذه الدفعة',
-                                        icon: const Icon(Icons.delete_outline, color: Colors.red),
-                                        onPressed: () => _confirmDeleteBatch(b),
-                                      ),
-                                      Row(
-                                        children: [
-                                          IconButton(
-                                            tooltip: 'تعديل الصنف / الدفعة',
-                                            icon: const Icon(Icons.edit_outlined, size: 22, color: AppTheme.primaryNavy),
-                                            onPressed: () => _openEditBatchModal(b),
-                                          ),
-                                          const SizedBox(width: 6),
-                                          ElevatedButton.icon(
-                                            style: ElevatedButton.styleFrom(
-                                              backgroundColor: isDone ? Colors.green.shade700 : AppTheme.primaryNavy,
-                                              foregroundColor: isDone ? Colors.white : AppTheme.royalGold,
-                                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                                            ),
-                                            onPressed: () => _openReceiveModal(b),
-                                            icon: Icon(
-                                              isDone ? Icons.check : Icons.assignment_turned_in_rounded,
-                                              size: 18,
-                                            ),
-                                            label: Text(
-                                              isDone ? 'تفاصيل الاستلام' : 'استلام',
-                                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ],
-                                  ),
-                                ],
-                              ],
-                            ),
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-            ),
-          ),
         ],
-      ),
-      floatingActionButton: FloatingActionButton.extended(
-        backgroundColor: AppTheme.primaryNavy,
-        foregroundColor: AppTheme.royalGold,
-        onPressed: _openSendModal,
-        icon: const Icon(Icons.send_rounded),
-        label: const Text('تسليم للمنجد', style: TextStyle(fontWeight: FontWeight.bold)),
       ),
     );
   }
 }
 
-/// زر شريحة فلترة مخصص
-class _FilterChip extends StatelessWidget {
-  final String label;
-  final bool isSelected;
-  final VoidCallback onSelected;
+class _SummaryMiniCol extends StatelessWidget {
+  final String title;
+  final String value;
+  final String piecesText;
+  final Color color;
 
-  const _FilterChip({
-    required this.label,
-    required this.isSelected,
-    required this.onSelected,
+  const _SummaryMiniCol({
+    required this.title,
+    required this.value,
+    required this.piecesText,
+    required this.color,
   });
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
-      borderRadius: BorderRadius.circular(20),
-      onTap: onSelected,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-        decoration: BoxDecoration(
-          color: isSelected ? AppTheme.primaryNavy : Colors.grey.shade100,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: isSelected ? AppTheme.primaryNavy : Colors.grey.shade300),
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            fontSize: 12,
-            fontWeight: FontWeight.bold,
-            color: isSelected ? AppTheme.royalGold : Colors.black87,
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Text(
+            title,
+            maxLines: 1,
+            style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: color),
           ),
         ),
-      ),
-    );
-  }
-}
-
-/// عنصر استلام قطعة فردية داخل نافذة الاستلام بنظام تفاعلي
-class _PieceReceiveItemWidget extends StatefulWidget {
-  final String pieceName;
-  final int baseQty;
-  final int sentQty;
-  final int receivedQty;
-  final int remainingQty;
-  final int deductedBySets;
-  final int interactiveRemaining;
-  final String sentDate;
-  final String? receivedDate;
-  final bool isDone;
-  final ValueChanged<int> onReceivePieces;
-
-  const _PieceReceiveItemWidget({
-    super.key,
-    required this.pieceName,
-    required this.baseQty,
-    required this.sentQty,
-    required this.receivedQty,
-    required this.remainingQty,
-    required this.deductedBySets,
-    required this.interactiveRemaining,
-    required this.sentDate,
-    required this.receivedDate,
-    required this.isDone,
-    required this.onReceivePieces,
-  });
-
-  @override
-  State<_PieceReceiveItemWidget> createState() => _PieceReceiveItemWidgetState();
-}
-
-class _PieceReceiveItemWidgetState extends State<_PieceReceiveItemWidget> {
-  int _qtyToReceive = 1;
-
-  @override
-  void initState() {
-    super.initState();
-    _resetQty();
-  }
-
-  @override
-  void didUpdateWidget(covariant _PieceReceiveItemWidget oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (widget.interactiveRemaining != oldWidget.interactiveRemaining ||
-        widget.remainingQty != oldWidget.remainingQty) {
-      _resetQty();
-    }
-  }
-
-  void _resetQty() {
-    final maxAvail = widget.interactiveRemaining;
-    if (maxAvail > 0) {
-      _qtyToReceive = 1;
-    } else {
-      _qtyToReceive = 0;
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final int maxAvail = widget.interactiveRemaining;
-    final bool canReceiveSingle = maxAvail > 0 && !widget.isDone;
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: widget.isDone ? Colors.green.shade50 : Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: widget.isDone ? Colors.green.shade300 : Colors.grey.shade300,
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Row(
-                children: [
-                  Text(
-                    widget.pieceName,
-                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
-                  ),
-                  const SizedBox(width: 8),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: Colors.grey.shade200,
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: Text(
-                      '${widget.baseQty} لكل طقم',
-                      style: TextStyle(fontSize: 11, color: Colors.grey.shade800, fontWeight: FontWeight.w600),
-                    ),
-                  ),
-                ],
-              ),
-              if (widget.isDone)
-                const Chip(
-                  backgroundColor: Colors.green,
-                  label: Text('تم استلامها بالكامل', style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold)),
-                )
-              else
-                Text(
-                  'المتبقي: ${widget.remainingQty} قطعة',
-                  style: const TextStyle(color: Colors.red, fontWeight: FontWeight.bold, fontSize: 13),
-                ),
-            ],
-          ),
-          const SizedBox(height: 4),
-          Row(
-            children: [
-              Text(
-                'المسلّم: ${widget.sentQty} (بتاريخ: ${widget.sentDate})',
-                style: TextStyle(color: Colors.grey.shade700, fontSize: 12),
-              ),
-              const SizedBox(width: 8),
-              Text(
-                '| المستلم: ${widget.receivedQty}',
-                style: const TextStyle(color: AppTheme.primaryNavy, fontWeight: FontWeight.bold, fontSize: 12),
-              ),
-            ],
-          ),
-          if (widget.receivedDate != null && widget.receivedDate!.isNotEmpty) ...[
-            const SizedBox(height: 2),
-            Text(
-              'آخر استلام بتاريخ: ${widget.receivedDate}',
-              style: const TextStyle(color: Colors.green, fontSize: 11, fontWeight: FontWeight.w600),
+        const SizedBox(height: 2),
+        FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Text(
+            value,
+            maxLines: 1,
+            style: TextStyle(
+              fontSize: 12.5,
+              fontWeight: FontWeight.w900,
+              color: AppTheme.textPrimary(context),
             ),
-          ],
-
-          // توضيح الخصم التفاعلي عند تحديد أطقم بالأعلى
-          if (widget.deductedBySets > 0 && !widget.isDone) ...[
-            const SizedBox(height: 8),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-              decoration: BoxDecoration(
-                color: Colors.amber.shade50,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.amber.shade300),
-              ),
-              child: Row(
-                children: [
-                  Icon(Icons.sync_alt, color: Colors.amber.shade900, size: 16),
-                  const SizedBox(width: 6),
-                  Expanded(
-                    child: Text(
-                      'خصم تلقائي: (${widget.deductedBySets}) قطعة مع الأطقم المحددة ➔ يتبقى بعدها: (${widget.interactiveRemaining}) قطعة',
-                      style: TextStyle(
-                        color: Colors.amber.shade900,
-                        fontSize: 12,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-
-          // خيار استلام قطعة واحدة أو عدد قطع منفردة
-          if (!widget.isDone) ...[
-            const SizedBox(height: 10),
-            if (canReceiveSingle)
-              Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  const Text('استلام منفرد: ', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
-                  const SizedBox(width: 6),
-                  // زر إنقاص
-                  Material(
-                    color: Colors.grey.shade200,
-                    borderRadius: BorderRadius.circular(6),
-                    child: InkWell(
-                      borderRadius: BorderRadius.circular(6),
-                      onTap: () {
-                        if (_qtyToReceive > 1) {
-                          setState(() => _qtyToReceive--);
-                        }
-                      },
-                      child: const Padding(
-                        padding: EdgeInsets.all(6),
-                        child: Icon(Icons.remove, size: 18),
-                      ),
-                    ),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 10),
-                    child: Text(
-                      '$_qtyToReceive',
-                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-                    ),
-                  ),
-                  // زر زيادة
-                  Material(
-                    color: Colors.grey.shade200,
-                    borderRadius: BorderRadius.circular(6),
-                    child: InkWell(
-                      borderRadius: BorderRadius.circular(6),
-                      onTap: () {
-                        if (_qtyToReceive < maxAvail) {
-                          setState(() => _qtyToReceive++);
-                        }
-                      },
-                      child: const Padding(
-                        padding: EdgeInsets.all(6),
-                        child: Icon(Icons.add, size: 18),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  // زر استلام القطعة
-                  ElevatedButton.icon(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.green.shade700,
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                    ),
-                    onPressed: _qtyToReceive > 0 ? () => widget.onReceivePieces(_qtyToReceive) : null,
-                    icon: const Icon(Icons.check, size: 18),
-                    label: Text('استلام ($_qtyToReceive)'),
-                  ),
-                ],
-              )
-            else if (widget.deductedBySets > 0 && widget.interactiveRemaining == 0)
-              Padding(
-                padding: const EdgeInsets.only(top: 4),
-                child: Text(
-                  'سيتم استلام كامل رصيد هذه القطعة تلقائياً مع الأطقم المحددة بالأعلى.',
-                  style: TextStyle(color: Colors.green.shade800, fontSize: 12, fontWeight: FontWeight.w600),
-                ),
-              ),
-          ],
-        ],
-      ),
+          ),
+        ),
+        Text(
+          piecesText,
+          maxLines: 1,
+          style: TextStyle(fontSize: 10, color: AppTheme.textMuted(context)),
+        ),
+      ],
     );
   }
 }

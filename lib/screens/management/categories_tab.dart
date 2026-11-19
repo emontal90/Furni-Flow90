@@ -857,29 +857,34 @@ class _CategoriesTabState extends State<CategoriesTab> {
                                     Row(
                                       children: [
                                         Expanded(
-                                          child: Text(
-                                            cat['name'],
-                                            style: const TextStyle(
-                                              fontWeight: FontWeight.bold,
-                                              fontSize: 15.5,
-                                              color: AppTheme.primaryNavy,
+                                          child: FittedBox(
+                                            fit: BoxFit.scaleDown,
+                                            alignment: AlignmentDirectional.centerStart,
+                                            child: Text(
+                                              (cat['name'] ?? '').toString(),
+                                              maxLines: 1,
+                                              style: TextStyle(
+                                                fontWeight: FontWeight.bold,
+                                                fontSize: 16,
+                                                color: AppTheme.textPrimary(context),
+                                              ),
                                             ),
-                                            overflow: TextOverflow.ellipsis,
                                           ),
                                         ),
-                                        const SizedBox(width: 6),
+                                        const SizedBox(width: 8),
                                         Container(
                                           padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
                                           decoration: BoxDecoration(
-                                            color: Colors.amber.shade50,
+                                            color: AppTheme.warningBg(context),
                                             borderRadius: BorderRadius.circular(6),
-                                            border: Border.all(color: Colors.amber.shade300),
+                                            border: Border.all(color: AppTheme.warningBorder(context)),
                                           ),
                                           child: Text(
                                             'المخزن: ${CategoryStockHelper.formatStockSummary(cat)}',
+                                            maxLines: 1,
                                             style: TextStyle(
                                               fontSize: 10.5,
-                                              color: Colors.amber.shade900,
+                                              color: AppTheme.warningFg(context),
                                               fontWeight: FontWeight.bold,
                                             ),
                                           ),
@@ -889,11 +894,11 @@ class _CategoriesTabState extends State<CategoriesTab> {
                                     const SizedBox(height: 3),
                                     Text(
                                       'المكونات (${comps.length}): $summaryText',
-                                      maxLines: isExpanded ? 4 : 2,
+                                      maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
                                       style: TextStyle(
                                         fontSize: 11.5,
-                                        color: Colors.grey.shade800,
+                                        color: AppTheme.textMuted(context),
                                         fontWeight: FontWeight.w500,
                                       ),
                                     ),
@@ -937,9 +942,9 @@ class _CategoriesTabState extends State<CategoriesTab> {
                                   return Container(
                                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                                     decoration: BoxDecoration(
-                                      color: AppTheme.primaryNavy.withValues(alpha: 0.05),
+                                      color: AppTheme.infoBg(context),
                                       borderRadius: BorderRadius.circular(8),
-                                      border: Border.all(color: AppTheme.primaryNavy.withValues(alpha: 0.15)),
+                                      border: Border.all(color: AppTheme.infoBorder(context)),
                                     ),
                                     child: Row(
                                       mainAxisSize: MainAxisSize.min,
@@ -948,10 +953,10 @@ class _CategoriesTabState extends State<CategoriesTab> {
                                         const SizedBox(width: 6),
                                         Text(
                                           'عدد $baseQ $pieceName',
-                                          style: const TextStyle(
+                                          style: TextStyle(
                                             fontWeight: FontWeight.bold,
                                             fontSize: 13,
-                                            color: AppTheme.primaryNavy,
+                                            color: AppTheme.infoFg(context),
                                           ),
                                         ),
                                       ],
