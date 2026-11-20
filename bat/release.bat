@@ -112,9 +112,9 @@ echo 1. Local APK path:
 echo    %cd%\releases\FurniFlow-v%NEW_VER%.apk
 echo.
 echo 2. GitHub Releases link:
-echo    https://github.com/emontal90/el-alfy-90/releases/latest
+echo    https://github.com/emontal90/Furni-Flow90/releases/latest
 echo    Direct Download Link:
-echo    https://github.com/emontal90/el-alfy-90/releases/latest/download/FurniFlow-App.apk
+echo    https://github.com/emontal90/Furni-Flow90/releases/latest/download/FurniFlow-App.apk
 echo ====================================================================
 echo.
 start "" explorer "releases"

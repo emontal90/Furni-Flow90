@@ -27,8 +27,8 @@ void main() {
       const info = AppUpdateInfo(
         version: '1.0.18',
         tagName: 'v1.0.18',
-        downloadUrl: 'https://github.com/emontal90/el-alfy-90/releases/download/v1.0.18/app-release.apk',
-        releasePageUrl: 'https://github.com/emontal90/el-alfy-90/releases/tag/v1.0.18',
+        downloadUrl: 'https://github.com/emontal90/Furni-Flow90/releases/download/v1.0.18/app-release.apk',
+        releasePageUrl: 'https://github.com/emontal90/Furni-Flow90/releases/tag/v1.0.18',
         releaseNotes: 'تحسينات جديدة',
         apkSize: 25000000,
       );
@@ -67,8 +67,8 @@ void main() {
       AppUpdateService.availableUpdateNotifier.value = const AppUpdateInfo(
         version: '1.0.18',
         tagName: 'v1.0.18',
-        downloadUrl: 'https://github.com/emontal90/el-alfy-90/releases/download/v1.0.18/app-release.apk',
-        releasePageUrl: 'https://github.com/emontal90/el-alfy-90/releases/tag/v1.0.18',
+        downloadUrl: 'https://github.com/emontal90/Furni-Flow90/releases/download/v1.0.18/app-release.apk',
+        releasePageUrl: 'https://github.com/emontal90/Furni-Flow90/releases/tag/v1.0.18',
         releaseNotes: 'تحسينات جديدة',
         apkSize: 25000000,
       );

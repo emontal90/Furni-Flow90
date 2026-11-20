@@ -14,9 +14,10 @@ enum ShareFormat { image, pdf }
 class ShareHelper {
   static const MethodChannel _channel = MethodChannel('com.example.furniture_erp/share');
 
-  /// التقاط الويدجت المربوط بـ [boundaryKey] كصورة عالية الدقة بصيغة JPEG أو PNG
-  static Future<({Uint8List bytes, int width, int height, bool isJpeg})?> _captureWidget({
+  /// التقاط الويدجت المربوط بـ [boundaryKey] كصورة عالية الدقة (PNG أو بايتات RGBA خام للـ PDF)
+  static Future<({Uint8List bytes, int width, int height, bool isRawRgba})?> _captureWidget({
     required GlobalKey boundaryKey,
+    required ShareFormat format,
   }) async {
     // ضمان اكتمال إطار الرسم وتجنب استدعاء toImage أثناء إعادة البناء
     await Future.delayed(const Duration(milliseconds: 60));
@@ -44,14 +45,26 @@ class ShareHelper {
 
     final ui.Image image = await renderObj.toImage(pixelRatio: pixelRatio);
     try {
-      final ByteData? byteData = await image.toByteData(format: ui.ImageByteFormat.png);
-      if (byteData == null) return null;
-      return (
-        bytes: byteData.buffer.asUint8List(),
-        width: image.width,
-        height: image.height,
-        isJpeg: false,
-      );
+      if (format == ShareFormat.pdf) {
+        // لتوليد PDF نأخذ بايتات RGBA الخام لتحويلها بدقة عالية وضغطها بمحرك FlateDecode
+        final ByteData? byteData = await image.toByteData(format: ui.ImageByteFormat.rawRgba);
+        if (byteData == null) return null;
+        return (
+          bytes: byteData.buffer.asUint8List(),
+          width: image.width,
+          height: image.height,
+          isRawRgba: true,
+        );
+      } else {
+        final ByteData? byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+        if (byteData == null) return null;
+        return (
+          bytes: byteData.buffer.asUint8List(),
+          width: image.width,
+          height: image.height,
+          isRawRgba: false,
+        );
+      }
     } finally {
       image.dispose();
     }
@@ -68,7 +81,7 @@ class ShareHelper {
       return 'المشاركة غير مدعومة على نسخة المتصفح.';
     }
 
-    final captured = await _captureWidget(boundaryKey: boundaryKey);
+    final captured = await _captureWidget(boundaryKey: boundaryKey, format: format);
     if (captured == null) {
       return 'تعذر تجهيز كشف الحساب، يرجى المحاولة مرة أخرى.';
     }
@@ -87,11 +100,10 @@ class ShareHelper {
     if (format == ShareFormat.pdf) {
       filePath = p.join(shareDir.path, '${safePrefix}_$timestamp.pdf');
       mimeType = 'application/pdf';
-      final pdfBytes = PdfImageDocumentBuilder.buildSingleImagePdf(
+      final pdfBytes = PdfImageDocumentBuilder.buildFromRawRgba(
         width: captured.width,
         height: captured.height,
-        imageBytes: captured.bytes,
-        isJpeg: captured.isJpeg,
+        rgbaBytes: captured.bytes,
       );
       final File file = File(filePath);
       await file.writeAsBytes(pdfBytes, flush: true);

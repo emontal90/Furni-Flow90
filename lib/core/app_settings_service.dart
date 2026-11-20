@@ -136,9 +136,15 @@ class AppSettingsService {
   // هوية المعرض الديناميكية (White-Label Showroom Profile)
   // ---------------------------------------------------------------------------
   static Future<ShowroomProfile> loadShowroomProfile() async {
-    final name = await getSetting(_showroomNameKey) ??
+    var name = await getSetting(_showroomNameKey) ??
         await SecurityStorageService.getString(_showroomNameKey) ??
         AppVersion.appName;
+    if (name.trim() == 'موبيليا تراك' ||
+        name.trim() == 'MobilyaTrack' ||
+        name.trim() == 'Mobilya Track') {
+      name = AppVersion.appName;
+      await setSetting(_showroomNameKey, name);
+    }
     final subtitle = await getSetting(_showroomSubtitleKey) ??
         await SecurityStorageService.getString(_showroomSubtitleKey) ??
         'نظام إدارة المعارض والمخازن والطلبيات';

@@ -28,7 +28,7 @@ class MainActivity: FlutterFragmentActivity() {
         private const val BACKUP_CHANNEL = "com.example.furniture_erp/backup_transfer"
         private const val SHARE_CHANNEL = "com.example.furniture_erp/share"
         private const val SECURITY_CHANNEL = "com.example.furniture_erp/security"
-        private const val ALLOWED_RELEASE_URL_PREFIX = "https://github.com/emontal90/el-alfy-90/releases"
+        private const val ALLOWED_RELEASE_URL_PREFIX = "https://github.com/emontal90/Furni-Flow90/releases"
         private const val PICK_BACKUP_REQUEST_CODE = 4091
         private const val CREATE_BACKUP_DOC_REQUEST_CODE = 4092
         private const val PICK_LOGO_REQUEST_CODE = 4093
@@ -283,7 +283,7 @@ class MainActivity: FlutterFragmentActivity() {
                     "shareBackupFile" -> {
                         val path = call.argument<String>("path")
                         val fileName = call.argument<String>("fileName")
-                        val subject = call.argument<String>("subject") ?: "نسخة احتياطية مشفرة - موبيليا تراك"
+                        val subject = call.argument<String>("subject") ?: "نسخة احتياطية مشفرة - FurniFlow"
                         if (path.isNullOrBlank() || fileName.isNullOrBlank()) {
                             result.error("INVALID_ARGS", "Missing backup path or filename", null)
                             return@setMethodCallHandler

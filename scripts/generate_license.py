@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-مولّد أكواد التفعيل التجاري لبرنامج موبيليا تراك (MobilyaTrack)
+مولّد أكواد التفعيل التجاري لبرنامج فورني فلو (FurniFlow)
 الاستخدام:
   python scripts/generate_license.py MT-XXXX-XXXX-XXXX            # ترخيص دائم (PERM)
   python scripts/generate_license.py MT-XXXX-XXXX-XXXX 20271231   # ترخيص حتى تاريخ محدد
@@ -29,7 +29,7 @@ def main():
     expiry = sys.argv[2] if len(sys.argv) >= 3 else "PERM"
     key = generate_license(device_code, expiry)
     print("========================================")
-    print("  MobilyaTrack Commercial License Key")
+    print("  FurniFlow Commercial License Key")
     print("========================================")
     print(f"Device Code : {device_code.strip().upper()}")
     print(f"Validity    : {'Permanent (Lifetime)' if expiry.upper() == 'PERM' else expiry}")

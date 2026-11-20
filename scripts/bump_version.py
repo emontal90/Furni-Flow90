@@ -44,8 +44,8 @@ def main():
 
     dart_content = f"""/// معلومات إصدار التطبيق الحالية (تُحدّث تلقائياً عند عمل Release جديد)
 class AppVersion {{
-  static const String appName = 'موبيليا تراك';
-  static const String appNameEn = 'MobilyaTrack';
+  static const String appName = 'فورني فلو';
+  static const String appNameEn = 'FurniFlow';
   static const String version = '{new_ver}';
   static const int buildNumber = {new_build};
 

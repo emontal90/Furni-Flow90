@@ -191,7 +191,7 @@ class BackupService {
     return (sqlitePath: tmpFile.path, wasTemporary: true);
   }
 
-  /// التحقق من أن الملف المختار هو قاعدة بيانات صالحة لنظام موبيليا تراك (مشفر .mtbk أو غير مشفر .db)
+  /// التحقق من أن الملف المختار هو قاعدة بيانات صالحة لنظام FurniFlow (مشفر .mtbk أو غير مشفر .db)
   static Future<bool> isValidBackupDatabase(String filePath, {String? passphrase}) async {
     String? tempToDelete;
     try {
@@ -269,7 +269,7 @@ class BackupService {
       if (Platform.isWindows) {
         final userProfile = Platform.environment['USERPROFILE'];
         if (userProfile != null && userProfile.isNotEmpty) {
-          final dlDir = Directory(p.join(userProfile, 'Downloads', 'MobilyaTrackBackups'));
+          final dlDir = Directory(p.join(userProfile, 'Downloads', 'FurniFlowBackups'));
           if (!await dlDir.exists()) {
             await dlDir.create(recursive: true);
           }
@@ -365,7 +365,7 @@ class BackupService {
     try {
       final valid = await isValidBackupDatabase(pickedPath, passphrase: passphrase);
       if (!valid) {
-        throw Exception('الملف المختار لا يخص قاعدة بيانات موبيليا تراك أو أنه تالف.');
+        throw Exception('الملف المختار لا يخص قاعدة بيانات FurniFlow أو أنه تالف.');
       }
 
       // أخذ نسخة وقائية من البيانات الحالية قبل الاستبدال
@@ -398,8 +398,8 @@ class BackupService {
       const script = '''
 Add-Type -AssemblyName System.Windows.Forms
 \$dlg = New-Object System.Windows.Forms.OpenFileDialog
-\$dlg.Title = "اختر ملف النسخة الاحتياطية (موبيليا تراك)"
-\$dlg.Filter = "MobilyaTrack Backups (*.mtbk;*.db)|*.mtbk;*.db|All Files (*.*)|*.*"
+\$dlg.Title = "اختر ملف النسخة الاحتياطية (FurniFlow)"
+\$dlg.Filter = "FurniFlow Backups (*.mtbk;*.db)|*.mtbk;*.db|All Files (*.*)|*.*"
 if (\$dlg.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
   Write-Output \$dlg.FileName
 }

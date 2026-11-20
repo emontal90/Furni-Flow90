@@ -1,6 +1,6 @@
 @echo off
 cd /d "%~dp0.."
-title Furniture ERP - Local Runner
+title FurniFlow ERP - Local Runner
 
 if exist "D:\flutter\bin" set "PATH=D:\flutter\bin;%PATH%"
 if exist "C:\flutter\bin" set "PATH=C:\flutter\bin;%PATH%"
@@ -22,7 +22,7 @@ if errorlevel 1 (
 )
 
 echo ====================================================================
-echo                   Furniture ERP System
+echo                   FurniFlow ERP System
 echo                    Local Test Runner
 echo ====================================================================
 echo.

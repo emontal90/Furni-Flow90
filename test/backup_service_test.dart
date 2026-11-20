@@ -13,7 +13,7 @@ void main() {
     }
   });
   test('BackupService.enforceMaxBackupLimit keeps at most 5 newest .db files', () async {
-    final tempDir = await Directory.systemTemp.createTemp('el_alfy_backup_test_');
+    final tempDir = await Directory.systemTemp.createTemp('furniflow_backup_test_');
     addTearDown(() async {
       if (await tempDir.exists()) {
         await tempDir.delete(recursive: true);
@@ -67,7 +67,7 @@ void main() {
   });
 
   test('BackupService.factoryReset clears tables and keeps backups directory untouched', () async {
-    final tempDir = await Directory.systemTemp.createTemp('el_alfy_backup_preserve_test_');
+    final tempDir = await Directory.systemTemp.createTemp('furniflow_backup_preserve_test_');
     addTearDown(() async {
       if (await tempDir.exists()) {
         await tempDir.delete(recursive: true);

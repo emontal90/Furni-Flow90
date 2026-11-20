@@ -12,7 +12,7 @@ class BackupCrypto {
   static const int _macLen = 32;
   static const int _pbkdf2Iterations = 6000;
 
-  /// التحقق مما إذا كان الملف مشفراً بصيغة موبيليا تراك
+  /// التحقق مما إذا كان الملف مشفراً بصيغة FurniFlow
   static bool isEncryptedBytes(Uint8List data) {
     if (data.length < magicHeader.length + _saltLen + _ivLen + _macLen) {
       return false;

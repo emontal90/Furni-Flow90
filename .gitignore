@@ -61,3 +61,5 @@ android/key.properties
 secrets/
 
 
+# Widget Preview related
+.widget_preview/
