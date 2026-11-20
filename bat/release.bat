@@ -1,7 +1,7 @@
 @echo off
 setlocal enableextensions
 cd /d "%~dp0.."
-title MobilyaTrack ERP - Auto Release
+title FurniFlow ERP - Auto Release
 
 if exist "D:\flutter\bin" set "PATH=D:\flutter\bin;%PATH%"
 if exist "C:\flutter\bin" set "PATH=C:\flutter\bin;%PATH%"
@@ -37,7 +37,7 @@ for /f "tokens=1 delims=+" %%v in ("%FULL_VER%") do set "CUR_VER=%%v"
 if "%CUR_VER%"=="" set "CUR_VER=unknown"
 
 echo ====================================================================
-echo             MobilyaTrack ERP - Automatic Release Manager
+echo             FurniFlow ERP - Automatic Release Manager
 echo             Current Version: v%CUR_VER%
 echo ====================================================================
 echo.
@@ -81,9 +81,10 @@ if errorlevel 1 (
 
 if not exist "releases" mkdir "releases"
 if exist "releases\*.apk" del /Q "releases\*.apk" >nul 2>nul
-copy /Y "build\app\outputs\flutter-apk\app-release.apk" "releases\MobilyaTrack-v%NEW_VER%.apk" >nul
+copy /Y "build\app\outputs\flutter-apk\app-release.apk" "releases\FurniFlow-v%NEW_VER%.apk" >nul
+copy /Y "build\app\outputs\flutter-apk\app-release.apk" "releases\FurniFlow-App.apk" >nul
 copy /Y "build\app\outputs\flutter-apk\app-release.apk" "releases\MobilyaTrack-App.apk" >nul
-echo Saved APK to: %cd%\releases\MobilyaTrack-v%NEW_VER%.apk
+echo Saved APK to: %cd%\releases\FurniFlow-v%NEW_VER%.apk
 echo.
 
 echo [3/4] Committing changes to Git...
@@ -108,12 +109,12 @@ echo ====================================================================
 echo [SUCCESS] Release v%NEW_VER% completed cleanly!
 echo.
 echo 1. Local APK path:
-echo    %cd%\releases\MobilyaTrack-v%NEW_VER%.apk
+echo    %cd%\releases\FurniFlow-v%NEW_VER%.apk
 echo.
 echo 2. GitHub Releases link:
 echo    https://github.com/emontal90/el-alfy-90/releases/latest
 echo    Direct Download Link:
-echo    https://github.com/emontal90/el-alfy-90/releases/latest/download/MobilyaTrack-App.apk
+echo    https://github.com/emontal90/el-alfy-90/releases/latest/download/FurniFlow-App.apk
 echo ====================================================================
 echo.
 start "" explorer "releases"

@@ -187,13 +187,18 @@ class _UpholstererStatementScreenState
     return 'من $fromStr إلى $toStr';
   }
 
-  Future<void> _shareAsImage(UpholstererStatementReport report) async {
+  Future<void> _shareStatement(UpholstererStatementReport report) async {
     if (_isSharing) return;
+
+    final format = await ShareHelper.showExportFormatDialog(context);
+    if (format == null || !mounted) return;
+
     setState(() => _isSharing = true);
     try {
-      final errorMsg = await ShareHelper.captureAndShareToWhatsApp(
+      final errorMsg = await ShareHelper.shareStatementToWhatsApp(
         boundaryKey: _captureKey,
         fileNamePrefix: 'upholsterer_statement',
+        format: format,
         captionText: 'كشف حساب المنجد - ${AppSettingsService.showroomProfileNotifier.value.displayName}',
       );
 
@@ -202,7 +207,7 @@ class _UpholstererStatementScreenState
       }
     } catch (e) {
       if (mounted) {
-        AppNotification.showError(context, 'تعذر تصدير صورة كشف الحساب: $e');
+        AppNotification.showError(context, 'تعذر مشاركة كشف الحساب: $e');
       }
     } finally {
       if (mounted) {
@@ -273,8 +278,8 @@ class _UpholstererStatementScreenState
         title: const AppBarTitleWithLogo(title: 'كشف حساب المنجد'),
         actions: [
           IconButton(
-            tooltip: 'مشاركة كشف الحساب على واتساب كصورة',
-            onPressed: _isLoading || _isSharing ? null : () => _shareAsImage(report),
+            tooltip: 'مشاركة كشف الحساب على واتساب (صورة / PDF)',
+            onPressed: _isLoading || _isSharing ? null : () => _shareStatement(report),
             icon: _isSharing
                 ? const SizedBox(
                     width: 20,
@@ -359,7 +364,7 @@ class _UpholstererStatementScreenState
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
               elevation: 2,
             ),
-            onPressed: _isLoading || _isSharing ? null : () => _shareAsImage(report),
+            onPressed: _isLoading || _isSharing ? null : () => _shareStatement(report),
             icon: _isSharing
                 ? const SizedBox(
                     width: 20,
@@ -371,7 +376,7 @@ class _UpholstererStatementScreenState
                   )
                 : const Icon(Icons.share_rounded, size: 22),
             label: Text(
-              _isSharing ? 'جاري تجهيز صورة الكشف...' : 'مشاركة كشف الحساب على واتساب (صورة)',
+              _isSharing ? 'جاري تجهيز كشف الحساب...' : 'مشاركة كشف الحساب على واتساب (صورة / PDF)',
               style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.bold),
             ),
           ),

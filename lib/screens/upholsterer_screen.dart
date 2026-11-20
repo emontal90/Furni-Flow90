@@ -264,15 +264,21 @@ class _UpholstererScreenState extends State<UpholstererScreen>
     return byName.values.toList();
   }
 
-  Set<String> _collectPreviousUpholsterers() {
+  Set<String> _collectPreviousUpholsterers({int? categoryId}) {
     final names = <String>{};
     for (final b in _batches) {
+      if (categoryId != null && CategoryStockHelper.parseInt(b['category_id']) != categoryId) {
+        continue;
+      }
       final n = (b['upholsterer_name'] ?? '').toString().trim();
-      if (n.isNotEmpty) names.add(n);
+      if (n.isNotEmpty && n != 'ورشة التنجيد' && n != 'ورشه التنجيد') names.add(n);
     }
     for (final t in _transactions) {
+      if (categoryId != null && CategoryStockHelper.parseInt(t['category_id']) != categoryId) {
+        continue;
+      }
       final n = (t['upholsterer_name'] ?? '').toString().trim();
-      if (n.isNotEmpty) names.add(n);
+      if (n.isNotEmpty && n != 'ورشة التنجيد' && n != 'ورشه التنجيد') names.add(n);
     }
     return names;
   }
@@ -600,11 +606,17 @@ class _UpholstererScreenState extends State<UpholstererScreen>
       return;
     }
 
-    final defaultUphName = (batch?['upholsterer_name'] ?? '').toString().trim();
-    final uphNameCtrl = TextEditingController(
-      text: defaultUphName.isNotEmpty ? defaultUphName : '',
-    );
-    final previousUpholsterers = _collectPreviousUpholsterers();
+    final int catId = CategoryStockHelper.parseInt(category['id']);
+    final previousUpholsterersForCategory = _collectPreviousUpholsterers(categoryId: catId);
+    final allPreviousUpholsterers = _collectPreviousUpholsterers();
+    // في الاستلام: نفضل أسماء المنجدين الذين تم تسليم هذا الطقم لهم، وإن لم توجد فمن جميع المعاملات
+    final relevantUpholsterers = isReceive && previousUpholsterersForCategory.isNotEmpty
+        ? previousUpholsterersForCategory
+        : (isReceive ? allPreviousUpholsterers : allPreviousUpholsterers);
+
+    // الحقل دائماً فارغ مطلوب إدخاله أو اختياره
+    final uphNameCtrl = TextEditingController(text: '');
+    String? uphError;
 
     int setsCount = isReceive ? (remBreakdown.completeSets > 0 ? 1 : 0) : 1;
     final setsCtrl = TextEditingController(text: '$setsCount');
@@ -677,26 +689,47 @@ class _UpholstererScreenState extends State<UpholstererScreen>
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
-                      Icon(
-                        isReceive ? Icons.move_to_inbox_rounded : Icons.outbox_rounded,
-                        color: isReceive ? Colors.green.shade600 : AppTheme.accentOnSurface(ctx),
-                        size: 25,
+                      Container(
+                        padding: const EdgeInsets.all(9),
+                        decoration: BoxDecoration(
+                          color: isReceive ? Colors.green.withValues(alpha: 0.14) : AppTheme.primaryNavy.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Icon(
+                          isReceive ? Icons.move_to_inbox_rounded : Icons.outbox_rounded,
+                          color: isReceive ? Colors.green.shade700 : AppTheme.primaryNavy,
+                          size: 26,
+                        ),
                       ),
-                      const SizedBox(width: 8),
+                      const SizedBox(width: 10),
                       Expanded(
-                        child: FittedBox(
-                          fit: BoxFit.scaleDown,
-                          alignment: AlignmentDirectional.centerStart,
-                          child: Text(
-                            isReceive ? 'استلام من المنجد — $catName' : 'تسليم للمنجد — $catName',
-                            maxLines: 1,
-                            style: TextStyle(
-                              fontSize: 16.5,
-                              fontWeight: FontWeight.bold,
-                              color: AppTheme.textPrimary(ctx),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              isReceive ? 'استلام من المنجد' : 'تسليم للمنجد',
+                              maxLines: 1,
+                              style: TextStyle(
+                                fontSize: 16.5,
+                                fontWeight: FontWeight.bold,
+                                color: isReceive ? Colors.green.shade800 : AppTheme.primaryNavy,
+                              ),
                             ),
-                          ),
+                            const SizedBox(height: 2),
+                            Text(
+                              'طقم: $catName',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 13.5,
+                                fontWeight: FontWeight.w600,
+                                color: AppTheme.textMuted(ctx),
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                       IconButton(
@@ -731,31 +764,66 @@ class _UpholstererScreenState extends State<UpholstererScreen>
                   ],
                   const SizedBox(height: 12),
 
-                  // اسم المنجد (اختياري أو اختيار سريع من السابقين)
+                  // اسم المنجد (إجباري)
                   TextField(
                     controller: uphNameCtrl,
-                    decoration: const InputDecoration(
-                      labelText: 'اسم المنجد / الورشة',
-                      hintText: 'اكتب اسم المنجد أو اختر من الأسفل',
-                      prefixIcon: Icon(Icons.person_outline_rounded),
+                    onChanged: (_) {
+                      if (uphError != null) {
+                        setModalState(() => uphError = null);
+                      }
+                    },
+                    decoration: InputDecoration(
+                      labelText: isReceive ? 'اسم المنجد المستلم منه *' : 'اسم المنجد / الورشة *',
+                      hintText: isReceive
+                          ? (relevantUpholsterers.isNotEmpty
+                              ? 'اختر اسم المنجد من القائمة أدناه أو اكتب اسمه'
+                              : 'اكتب اسم المنجد المستلم منه')
+                          : 'اكتب اسم المنجد أو اختر من المسجلين سابقاً',
+                      prefixIcon: const Icon(Icons.person_outline_rounded),
+                      errorText: uphError,
+                      helperText: isReceive
+                          ? 'يجب تحديد اسم المنجد المستلم منه'
+                          : 'يجب كتابة أو اختيار اسم المنجد لإتمام التسليم',
                     ),
                   ),
-                  if (previousUpholsterers.isNotEmpty) ...[
-                    const SizedBox(height: 6),
-                    SingleChildScrollView(
-                      scrollDirection: Axis.horizontal,
-                      child: Row(
-                        children: previousUpholsterers.take(6).map((name) {
-                          return Padding(
-                            padding: const EdgeInsetsDirectional.only(end: 6),
-                            child: ActionChip(
-                              visualDensity: VisualDensity.compact,
-                              label: Text(name, style: const TextStyle(fontSize: 12)),
-                              onPressed: () => setModalState(() => uphNameCtrl.text = name),
+                  if (relevantUpholsterers.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Icon(Icons.history_rounded, size: 14, color: AppTheme.textMuted(ctx)),
+                        const SizedBox(width: 4),
+                        Text(
+                          isReceive ? 'منجدون تم التسليم لهم سابقاً (اضغط للاختيار):' : 'منجدون مسجلون سابقاً (اضغط للاختيار):',
+                          style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: AppTheme.textMuted(ctx)),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 5),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      children: relevantUpholsterers.map((name) {
+                        final isSelected = uphNameCtrl.text.trim() == name;
+                        return ChoiceChip(
+                          visualDensity: VisualDensity.compact,
+                          label: Text(
+                            name,
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                              color: isSelected ? Colors.white : AppTheme.textPrimary(ctx),
                             ),
-                          );
-                        }).toList(),
-                      ),
+                          ),
+                          selected: isSelected,
+                          selectedColor: isReceive ? Colors.green.shade700 : AppTheme.primaryNavy,
+                          onSelected: (selected) {
+                            setModalState(() {
+                              uphNameCtrl.text = selected ? name : '';
+                              uphError = null;
+                            });
+                          },
+                        );
+                      }).toList(),
                     ),
                   ],
                   const SizedBox(height: 12),
@@ -999,10 +1067,27 @@ class _UpholstererScreenState extends State<UpholstererScreen>
                     onPressed: (isSaving || liveBreak.totalPieces <= 0)
                         ? null
                         : () async {
-                            setModalState(() => isSaving = true);
-                            final uphName = uphNameCtrl.text.trim().isNotEmpty
-                                ? uphNameCtrl.text.trim()
-                                : 'ورشة التنجيد';
+                            final rawUphName = uphNameCtrl.text.trim();
+                            if (rawUphName.isEmpty) {
+                              setModalState(() {
+                                uphError = isReceive
+                                    ? 'برجاء اختيار أو كتابة اسم المنجد المستلم منه'
+                                    : 'برجاء كتابة أو اختيار اسم المنجد أولاً';
+                              });
+                              AppNotification.showError(
+                                context,
+                                isReceive
+                                    ? 'يجب تحديد اسم المنجد المستلم منه للمتابعة'
+                                    : 'لا يمكن إتمام التسليم بدون إدخال اسم المنجد / الورشة',
+                              );
+                              return;
+                            }
+
+                            setModalState(() {
+                              isSaving = true;
+                              uphError = null;
+                            });
+                            final uphName = rawUphName;
 
                             final selectedPieces = <Map<String, dynamic>>[];
                             for (final p in pieceItems) {

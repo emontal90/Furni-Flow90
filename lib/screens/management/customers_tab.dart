@@ -40,9 +40,9 @@ class _CustomersTabState extends State<CustomersTab> {
   }
 
   // رسالة تأكيد حذف عميل
-  Future<void> _confirmDeleteCustomer(BuildContext context, Map<String, dynamic> c) async {
+  Future<void> _confirmDeleteCustomer(BuildContext callerCtx, Map<String, dynamic> c) async {
     final bool? confirm = await showDialog<bool>(
-      context: context,
+      context: callerCtx,
       builder: (dCtx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: const Row(
@@ -78,9 +78,8 @@ class _CustomersTabState extends State<CustomersTab> {
       final db = await DBHelper.instance.database;
       await db.delete('customers', where: 'id = ?', whereArgs: [c['id']]);
       AppEvents.instance.notifyAll();
-      if (mounted) {
-        AppNotification.showError(context, 'تم حذف العميل "${c['name']}" بنجاح');
-      }
+      if (!mounted) return;
+      AppNotification.showError(context, 'تم حذف العميل "${c['name']}" بنجاح');
     }
   }
 
@@ -200,8 +199,10 @@ class _CustomersTabState extends State<CustomersTab> {
                 _addressCtrl.clear();
 
                 AppEvents.instance.notifyAll();
-                if (mounted) {
+                if (ctx.mounted) {
                   Navigator.pop(ctx);
+                }
+                if (mounted) {
                   AppNotification.showSuccess(context, 'تم تعديل بيانات العميل بنجاح');
                 }
               },
@@ -289,8 +290,10 @@ class _CustomersTabState extends State<CustomersTab> {
                 _phoneCtrl.clear();
                 _addressCtrl.clear();
                 AppEvents.instance.notifyAll();
-                if (mounted) {
+                if (ctx.mounted) {
                   Navigator.pop(ctx);
+                }
+                if (mounted) {
                   AppNotification.showSuccess(context, 'تم إضافة العميل بنجاح');
                 }
               },

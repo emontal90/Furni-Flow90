@@ -129,9 +129,12 @@ class AppUpdateService {
           if (!url.startsWith(_allowedDownloadPrefix)) continue;
           if (!name.toLowerCase().endsWith('.apk')) continue;
 
-          if (name == 'MobilyaTrack-App.apk') {
+          if (name == 'FurniFlow-App.apk') {
             preferredAsset = item;
             break;
+          }
+          if (name == 'MobilyaTrack-App.apk') {
+            preferredAsset = item;
           }
           if (name == 'el-Alfy-App.apk') {
             legacyAsset = item;

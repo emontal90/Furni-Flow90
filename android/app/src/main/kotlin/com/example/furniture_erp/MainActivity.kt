@@ -350,17 +350,18 @@ class MainActivity: FlutterFragmentActivity() {
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, SHARE_CHANNEL)
             .setMethodCallHandler { call, result ->
                 when (call.method) {
-                    "shareImageToWhatsApp" -> {
+                    "shareImageToWhatsApp", "shareFileToWhatsApp" -> {
                         val path = call.argument<String>("path")
                         val caption = call.argument<String>("text") ?: ""
+                        val explicitMime = call.argument<String>("mimeType")
                         if (path.isNullOrBlank()) {
-                            result.error("INVALID_ARGS", "Missing image path", null)
+                            result.error("INVALID_ARGS", "Missing file path", null)
                             return@setMethodCallHandler
                         }
                         try {
                             val sourceFile = File(path)
                             if (!isInsideAppFiles(sourceFile) || !sourceFile.exists() || !sourceFile.isFile) {
-                                result.error("INVALID_FILE", "ملف الصورة غير موجود", null)
+                                result.error("INVALID_FILE", "الملف المطلوب مشاركته غير موجود", null)
                                 return@setMethodCallHandler
                             }
                             val shareDir = File(cacheDir, "shared_statements")
@@ -372,15 +373,23 @@ class MainActivity: FlutterFragmentActivity() {
                                     try { old.delete() } catch (_: Exception) {}
                                 }
                             }
-                            val safeName = File(path).name.ifBlank { "statement_${now}.png" }
+                            val extension = sourceFile.extension.ifBlank { "png" }
+                            val safeName = sourceFile.name.ifBlank { "statement_${now}.$extension" }
                             val shareFile = File(shareDir, safeName)
                             if (sourceFile.canonicalPath != shareFile.canonicalPath) {
                                 sourceFile.copyTo(shareFile, overwrite = true)
                             }
 
                             if (!shareFile.exists() || shareFile.length() == 0L) {
-                                result.error("INVALID_FILE", "ملف الصورة فارغ أو تعذر إنشاؤه", null)
+                                result.error("INVALID_FILE", "الملف فارغ أو تعذر إنشاؤه", null)
                                 return@setMethodCallHandler
+                            }
+
+                            val resolvedMime = when {
+                                !explicitMime.isNullOrBlank() -> explicitMime
+                                safeName.endsWith(".pdf", ignoreCase = true) -> "application/pdf"
+                                safeName.endsWith(".jpg", ignoreCase = true) || safeName.endsWith(".jpeg", ignoreCase = true) -> "image/jpeg"
+                                else -> "image/png"
                             }
 
                             val uri = FileProvider.getUriForFile(
@@ -389,9 +398,9 @@ class MainActivity: FlutterFragmentActivity() {
                                 shareFile
                             )
 
-                            val clipData = ClipData.newUri(contentResolver, "statement_image", uri)
+                            val clipData = ClipData.newUri(contentResolver, "statement_file", uri)
                             val baseIntent = Intent(Intent.ACTION_SEND).apply {
-                                type = "image/png"
+                                type = resolvedMime
                                 putExtra(Intent.EXTRA_STREAM, uri)
                                 this.clipData = clipData
                                 if (caption.isNotBlank()) {
@@ -454,7 +463,8 @@ class MainActivity: FlutterFragmentActivity() {
                                 } catch (_: Exception) {}
                             }
 
-                            val chooser = Intent.createChooser(baseIntent, "مشاركة كشف الحساب كصورة").apply {
+                            val chooserTitle = if (resolvedMime == "application/pdf") "مشاركة كشف الحساب (PDF)" else "مشاركة كشف الحساب كصورة"
+                            val chooser = Intent.createChooser(baseIntent, chooserTitle).apply {
                                 this.clipData = clipData
                                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -462,7 +472,7 @@ class MainActivity: FlutterFragmentActivity() {
                             startActivity(chooser)
                             result.success(true)
                         } catch (e: Exception) {
-                            result.error("SHARE_FAILED", e.message ?: "فشل مشاركة الصورة", null)
+                            result.error("SHARE_FAILED", e.message ?: "فشل مشاركة الملف", null)
                         }
                     }
                     else -> result.notImplemented()

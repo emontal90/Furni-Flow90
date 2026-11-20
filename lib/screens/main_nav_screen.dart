@@ -75,6 +75,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
     if (elapsed < timeoutSecs) return;
 
     _isLockOverlayOpen = true;
+    if (!mounted) return;
     await Navigator.of(context).push<void>(
       PageRouteBuilder(
         opaque: true,

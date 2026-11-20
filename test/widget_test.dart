@@ -3,8 +3,8 @@ import 'package:furniture_erp/core/app_version.dart';
 
 void main() {
   test('AppVersion sanity check', () {
-    expect(AppVersion.appName, 'موبيليا تراك');
-    expect(AppVersion.appNameEn, 'MobilyaTrack');
+    expect(AppVersion.appName, 'فورني فلو');
+    expect(AppVersion.appNameEn, 'FurniFlow');
     expect(AppVersion.version, isNotEmpty);
     expect(AppVersion.displayVersion, contains('v1.'));
   });

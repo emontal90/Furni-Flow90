@@ -428,6 +428,18 @@ class _GeneralSettingsTabState extends State<_GeneralSettingsTab> {
     }
   }
 
+  Future<void> _handleBackupEncryptionToggle(bool val) async {
+    await AppSettingsService.setBackupEncryptionEnabled(val);
+    if (!mounted) return;
+    setState(() => _backupEncryptionEnabled = val);
+    AppNotification.showInfo(
+      context,
+      val
+          ? 'تم تفعيل تشفير النسخ الاحتياطية المصدرة (AES-256)'
+          : 'تم تعطيل التشفير للنسخ المصدرة (ملف SQLite مباشر)',
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
@@ -444,7 +456,7 @@ class _GeneralSettingsTabState extends State<_GeneralSettingsTab> {
           // 1. إشعار التحديث الجديد إن وُجد
           ValueListenableBuilder<AppUpdateInfo?>(
             valueListenable: AppUpdateService.availableUpdateNotifier,
-            builder: (context, update, _) {
+            builder: (_, update, __) {
               if (update == null) return const SizedBox.shrink();
               return Container(
                 margin: const EdgeInsets.only(bottom: 16),
@@ -550,7 +562,7 @@ class _GeneralSettingsTabState extends State<_GeneralSettingsTab> {
                   const SizedBox(height: 10),
                   ValueListenableBuilder<ThemeMode>(
                     valueListenable: AppSettingsService.themeModeNotifier,
-                    builder: (context, mode, _) {
+                    builder: (_, mode, __) {
                       final darkActive = mode == ThemeMode.dark;
                       return Container(
                         decoration: BoxDecoration(
@@ -608,7 +620,7 @@ class _GeneralSettingsTabState extends State<_GeneralSettingsTab> {
           // 3. بيانات وهوية المعرض القابلة للتخصيص التجاري (White-Labeling)
           ValueListenableBuilder<ShowroomProfile>(
             valueListenable: AppSettingsService.showroomProfileNotifier,
-            builder: (context, profile, _) {
+            builder: (_, profile, __) {
               return Card(
                 elevation: 2,
                 shape: RoundedRectangleBorder(
@@ -833,18 +845,7 @@ class _GeneralSettingsTabState extends State<_GeneralSettingsTab> {
                     ),
                     child: SwitchListTile(
                       value: _backupEncryptionEnabled,
-                      onChanged: (val) async {
-                        await AppSettingsService.setBackupEncryptionEnabled(val);
-                        setState(() => _backupEncryptionEnabled = val);
-                        if (mounted) {
-                          AppNotification.showInfo(
-                            context,
-                            val
-                                ? 'تم تفعيل تشفير النسخ الاحتياطية المصدرة (AES-256)'
-                                : 'تم تعطيل التشفير للنسخ المصدرة (ملف SQLite مباشر)',
-                          );
-                        }
-                      },
+                      onChanged: _handleBackupEncryptionToggle,
                       activeThumbColor: AppTheme.primaryNavy,
                       activeTrackColor: AppTheme.royalGold.withValues(alpha: 0.65),
                       secondary: Icon(
@@ -1037,7 +1038,7 @@ class _GeneralSettingsTabState extends State<_GeneralSettingsTab> {
                   const SizedBox(height: 14),
                   ValueListenableBuilder<AppUpdateInfo?>(
                     valueListenable: AppUpdateService.availableUpdateNotifier,
-                    builder: (context, update, _) {
+                    builder: (_, update, __) {
                       return SizedBox(
                         width: double.infinity,
                         child: OutlinedButton.icon(

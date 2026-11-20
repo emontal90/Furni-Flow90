@@ -395,7 +395,7 @@ class BackupService {
 
   static Future<String?> _pickBackupFileOnWindows() async {
     try {
-      final script = '''
+      const script = '''
 Add-Type -AssemblyName System.Windows.Forms
 \$dlg = New-Object System.Windows.Forms.OpenFileDialog
 \$dlg.Title = "اختر ملف النسخة الاحتياطية (موبيليا تراك)"

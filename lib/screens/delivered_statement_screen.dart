@@ -171,14 +171,19 @@ class _DeliveredStatementScreenState extends State<DeliveredStatementScreen> {
     return 'من $fromStr إلى $toStr';
   }
 
-  Future<void> _shareAsImage() async {
+  Future<void> _shareStatement() async {
     if (_isSharing) return;
+
+    final format = await ShareHelper.showExportFormatDialog(context);
+    if (format == null || !mounted) return;
+
     setState(() => _isSharing = true);
     try {
       final showroomName = AppSettingsService.showroomProfileNotifier.value.displayName;
-      final errorMsg = await ShareHelper.captureAndShareToWhatsApp(
+      final errorMsg = await ShareHelper.shareStatementToWhatsApp(
         boundaryKey: _captureKey,
         fileNamePrefix: 'delivered_statement',
+        format: format,
         captionText: 'كشف حساب التسليمات - $showroomName',
       );
       if (mounted && errorMsg != null) {
@@ -186,7 +191,7 @@ class _DeliveredStatementScreenState extends State<DeliveredStatementScreen> {
       }
     } catch (e) {
       if (mounted) {
-        AppNotification.showError(context, 'تعذر تصدير صورة كشف الحساب: $e');
+        AppNotification.showError(context, 'تعذر مشاركة كشف الحساب: $e');
       }
     } finally {
       if (mounted) setState(() => _isSharing = false);
@@ -244,8 +249,8 @@ class _DeliveredStatementScreenState extends State<DeliveredStatementScreen> {
         title: const AppBarTitleWithLogo(title: 'كشف حساب التسليمات'),
         actions: [
           IconButton(
-            tooltip: 'مشاركة كشف الحساب على واتساب كصورة',
-            onPressed: _isLoading || _isSharing ? null : _shareAsImage,
+            tooltip: 'مشاركة كشف الحساب على واتساب (صورة / PDF)',
+            onPressed: _isLoading || _isSharing ? null : _shareStatement,
             icon: _isSharing
                 ? const SizedBox(
                     width: 20,
@@ -335,7 +340,7 @@ class _DeliveredStatementScreenState extends State<DeliveredStatementScreen> {
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
               elevation: 2,
             ),
-            onPressed: _isLoading || _isSharing ? null : _shareAsImage,
+            onPressed: _isLoading || _isSharing ? null : _shareStatement,
             icon: _isSharing
                 ? const SizedBox(
                     width: 20,
@@ -344,7 +349,7 @@ class _DeliveredStatementScreenState extends State<DeliveredStatementScreen> {
                   )
                 : const Icon(Icons.share_rounded, size: 22),
             label: Text(
-              _isSharing ? 'جاري تجهيز صورة الكشف...' : 'مشاركة كشف الحساب على واتساب (صورة)',
+              _isSharing ? 'جاري تجهيز كشف الحساب...' : 'مشاركة كشف الحساب على واتساب (صورة / PDF)',
               style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.bold),
             ),
           ),

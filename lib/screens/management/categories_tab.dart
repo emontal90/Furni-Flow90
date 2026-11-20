@@ -98,9 +98,9 @@ class _CategoriesTabState extends State<CategoriesTab> {
   }
 
   // رسالة تأكيد لحذف صنف بالكامل
-  Future<void> _confirmDeleteCategory(BuildContext context, Map<String, dynamic> cat) async {
+  Future<void> _confirmDeleteCategory(BuildContext callerCtx, Map<String, dynamic> cat) async {
     final bool? confirm = await showDialog<bool>(
-      context: context,
+      context: callerCtx,
       builder: (dCtx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: const Row(
@@ -136,9 +136,8 @@ class _CategoriesTabState extends State<CategoriesTab> {
       final db = await DBHelper.instance.database;
       await db.delete('categories', where: 'id = ?', whereArgs: [cat['id']]);
       AppEvents.instance.notifyAll();
-      if (mounted) {
-        AppNotification.showError(context, 'تم حذف طقم "${cat['name']}" بنجاح');
-      }
+      if (!mounted) return;
+      AppNotification.showError(context, 'تم حذف طقم "${cat['name']}" بنجاح');
     }
   }
 
@@ -400,8 +399,10 @@ class _CategoriesTabState extends State<CategoriesTab> {
                     });
 
                     AppEvents.instance.notifyAll();
-                    if (mounted) {
+                    if (ctx.mounted) {
                       Navigator.pop(ctx);
+                    }
+                    if (mounted) {
                       AppNotification.showSuccess(
                         context,
                         'تم حفظ طقم "$catName" بنجاح وإدراجه في قائمة المخزون',
@@ -741,8 +742,10 @@ class _CategoriesTabState extends State<CategoriesTab> {
                     });
 
                     AppEvents.instance.notifyAll();
-                    if (mounted) {
+                    if (ctx.mounted) {
                       Navigator.pop(ctx);
+                    }
+                    if (mounted) {
                       AppNotification.showSuccess(context, 'تم حفظ تعديلات طقم "$newCatName" بنجاح');
                     }
                   },

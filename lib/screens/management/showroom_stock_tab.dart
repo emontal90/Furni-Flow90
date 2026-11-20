@@ -115,12 +115,12 @@ class _ShowroomStockTabState extends State<ShowroomStockTab> {
 
   // نافذة تأكيد حذف صنف بالكامل
   Future<void> _confirmDeleteCategory(
-    BuildContext context,
+    BuildContext callerCtx,
     Map<String, dynamic> cat, {
     BuildContext? modalContext,
   }) async {
     final bool? confirm = await showDialog<bool>(
-      context: context,
+      context: callerCtx,
       builder: (dCtx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: const Row(
@@ -159,9 +159,8 @@ class _ShowroomStockTabState extends State<ShowroomStockTab> {
       if (modalContext != null && modalContext.mounted) {
         Navigator.pop(modalContext);
       }
-      if (mounted) {
-        AppNotification.showError(context, 'تم حذف طقم "${cat['name']}" بنجاح');
-      }
+      if (!mounted) return;
+      AppNotification.showError(context, 'تم حذف طقم "${cat['name']}" بنجاح');
     }
   }
 
@@ -709,8 +708,10 @@ class _ShowroomStockTabState extends State<ShowroomStockTab> {
                     }
 
                     AppEvents.instance.notifyAll();
-                    if (mounted) {
+                    if (ctx.mounted) {
                       Navigator.pop(ctx);
+                    }
+                    if (mounted) {
                       AppNotification.showSuccess(context, 'تم تحديث رصيد وقطع الطقم بالمخزن بنجاح');
                     }
                   },

@@ -324,7 +324,7 @@ void main() {
       expect(find.text('ثانياً: الاستلام من المنجد'), findsOneWidget);
       expect(find.text('2 طقم'), findsWidgets);
       expect(find.text('1 طقم و 1 فردي'), findsWidgets);
-      expect(find.text('مشاركة كشف الحساب على واتساب (صورة)'), findsOneWidget);
+      expect(find.text('مشاركة كشف الحساب على واتساب (صورة / PDF)'), findsOneWidget);
     });
 
     test('formatCompactLine formats single-line string matching notebook ledger style', () {

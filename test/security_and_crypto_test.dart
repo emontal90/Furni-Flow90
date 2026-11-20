@@ -8,7 +8,7 @@ import 'package:furniture_erp/core/stock_movement_helper.dart';
 void main() {
   group('BackupCrypto (AES-256-CTR + HMAC-SHA256)', () {
     test('encrypts and decrypts binary data accurately', () {
-      final sample = Uint8List.fromList(utf8.encode('SQLite format 3\u0000' + 'MobilyaTrackData' * 20));
+      final sample = Uint8List.fromList(utf8.encode('SQLite format 3\u0000${'MobilyaTrackData' * 20}'));
       final encrypted = BackupCrypto.encryptBytes(sample);
 
       expect(BackupCrypto.isEncryptedBytes(encrypted), isTrue);
