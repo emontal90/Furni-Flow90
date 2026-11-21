@@ -5,9 +5,11 @@ import 'core/app_settings_service.dart';
 import 'core/app_theme.dart';
 import 'core/app_version.dart';
 import 'core/backup_service.dart';
+import 'core/cloud_service.dart';
 import 'core/db_helper.dart';
 import 'core/license_service.dart';
 import 'core/platform_init.dart';
+import 'core/security_storage_service.dart';
 import 'screens/auth_screen.dart';
 import 'screens/main_nav_screen.dart';
 
@@ -17,6 +19,11 @@ void main() async {
   await DBHelper.instance.database;
   await AppSettingsService.initialize();
   await LicenseService.checkStatus();
+
+  // فحص وتحديث حالة الاشتراك التجاري سحابياً في الخلفية
+  SecurityStorageService.getDeviceCode().then((code) {
+    CloudService.checkAndSyncSubscriptionStatus(code);
+  });
 
   final bool biometricEnabled = await AppSettingsService.isBiometricEnabled();
 

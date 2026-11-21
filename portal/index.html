@@ -1,0 +1,704 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FurniFlow - بورتال إدارة الاشتراكات والتراخيص</title>
+    <!-- Google Fonts (Cairo) -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800;900&display=swap" rel="stylesheet">
+    <!-- FontAwesome 6 -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Supabase JS Client -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <!-- CryptoJS for HMAC-SHA256 license generation -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
+    <!-- Config injected via GitHub Actions from Repository Secrets / Variables -->
+    <script src="config.js"></script>
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        navy: {
+                            800: '#152238',
+                            900: '#0c1626',
+                            950: '#060c16',
+                        },
+                        gold: {
+                            400: '#F5C542',
+                            500: '#E5A91A',
+                            600: '#C28B0A',
+                        }
+                    },
+                    fontFamily: {
+                        cairo: ['Cairo', 'sans-serif'],
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body {
+            font-family: 'Cairo', sans-serif;
+            background-color: #0c1626;
+            color: #f1f5f9;
+        }
+        .gold-gradient {
+            background: linear-gradient(135deg, #F5C542 0%, #C28B0A 100%);
+        }
+        .gold-border {
+            border-color: rgba(245, 197, 66, 0.35);
+        }
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #2a3d5e;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body class="min-vh-100 flex flex-col justify-between selection:bg-gold-500 selection:text-navy-950">
+
+    <!-- Top Toast Notification -->
+    <div id="toast" class="fixed top-5 left-1/2 -translate-x-1/2 z-50 hidden transition-all duration-300">
+        <div id="toastContent" class="flex items-center gap-3 px-5 py-3 rounded-xl shadow-2xl text-sm font-bold border">
+            <i id="toastIcon" class="fa-solid fa-circle-check text-lg"></i>
+            <span id="toastMsg">تم الإجراء بنجاح</span>
+        </div>
+    </div>
+
+    <!-- ============================================================== -->
+    <!-- 1. LOGIN SCREEN -->
+    <!-- ============================================================== -->
+    <div id="loginView" class="min-h-screen flex items-center justify-center p-4">
+        <div class="w-full max-w-md bg-navy-900 border gold-border rounded-3xl p-8 shadow-2xl relative overflow-hidden">
+            <!-- Background Glow -->
+            <div class="absolute -top-20 -right-20 w-48 h-48 bg-gold-500/10 rounded-full blur-3xl pointer-events-none"></div>
+
+            <div class="text-center mb-6">
+                <img src="app_logo.png" alt="FurniFlow Logo" class="w-24 h-24 mx-auto mb-3 object-contain drop-shadow-md rounded-2xl" onerror="this.onerror=null; this.src='https://raw.githubusercontent.com/emontal90/Furni-Flow90/main/assets/images/app_logo.png'">
+                <h1 class="text-2xl font-black text-gold-400">فورني فلو | FurniFlow</h1>
+                <p class="text-xs text-slate-400 mt-1">بورتال الإدارة والتحكم في الاشتراكات والتراخيص السحابية</p>
+            </div>
+
+            <form id="loginForm" class="space-y-4">
+                <div>
+                    <label class="block text-xs font-bold text-slate-300 mb-1">البريد الإلكتروني للإدارة</label>
+                    <div class="relative">
+                        <i class="fa-solid fa-envelope absolute right-3.5 top-3.5 text-slate-400"></i>
+                        <input type="email" id="loginEmail" required placeholder="admin@furniflow.com" dir="ltr"
+                            class="w-full bg-navy-950 border border-slate-700 rounded-xl py-2.5 pr-10 pl-3 text-sm focus:outline-none focus:border-gold-500 text-white placeholder-slate-500">
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-bold text-slate-300 mb-1">كلمة المرور</label>
+                    <div class="relative">
+                        <i class="fa-solid fa-lock absolute right-3.5 top-3.5 text-slate-400"></i>
+                        <input type="password" id="loginPassword" required placeholder="••••••••" dir="ltr"
+                            class="w-full bg-navy-950 border border-slate-700 rounded-xl py-2.5 pr-10 pl-3 text-sm focus:outline-none focus:border-gold-500 text-white placeholder-slate-500">
+                    </div>
+                </div>
+
+                <div id="loginError" class="hidden text-xs text-rose-400 bg-rose-950/50 border border-rose-800 p-3 rounded-xl"></div>
+
+                <button type="submit" id="loginBtn" class="w-full py-3 px-4 rounded-xl gold-gradient text-navy-950 font-black text-sm hover:opacity-95 transition-all shadow-lg shadow-gold-500/20 flex items-center justify-center gap-2">
+                    <i class="fa-solid fa-right-to-bracket"></i>
+                    <span>تسجيل الدخول للإدارة</span>
+                </button>
+            </form>
+
+            <div class="mt-6 pt-4 border-t border-slate-800 text-center text-xs text-slate-500">
+                <span>فورني فلو &bull; FurniFlow ERP v1.2.6</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- ============================================================== -->
+    <!-- 2. DASHBOARD VIEW -->
+    <!-- ============================================================== -->
+    <div id="dashboardView" class="hidden min-h-screen flex flex-col">
+        <!-- Header -->
+        <header class="bg-navy-900 border-b gold-border sticky top-0 z-40">
+            <div class="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
+                <div class="flex items-center gap-3">
+                    <img src="app_logo.png" alt="FurniFlow" class="w-10 h-10 object-contain rounded-xl border border-gold-500/30" onerror="this.onerror=null; this.src='https://raw.githubusercontent.com/emontal90/Furni-Flow90/main/assets/images/app_logo.png'">
+                    <div>
+                        <div class="flex items-center gap-2">
+                            <h2 class="text-base font-black text-gold-400">فورني فلو</h2>
+                            <span class="text-[10px] bg-gold-500/20 text-gold-400 px-2 py-0.5 rounded-full font-bold">بورتال المدير</span>
+                        </div>
+                        <p class="text-[11px] text-slate-400 hidden sm:block">إدارة التراخيص والتفعيل اللحظي للاشتراكات</p>
+                    </div>
+                </div>
+
+                <div class="flex items-center gap-3">
+                    <div class="text-left hidden md:block">
+                        <span id="adminUserLabel" class="text-xs font-bold text-slate-300 block">مدير النظام</span>
+                        <span class="text-[10px] text-emerald-400 flex items-center gap-1">
+                            <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span> متصل بسوبا بيز
+                        </span>
+                    </div>
+
+                    <button onclick="fetchSubscriptions()" title="تحديث البيانات" class="p-2.5 rounded-xl bg-navy-800 border border-slate-700 hover:border-gold-500 text-slate-300 hover:text-gold-400 transition-all">
+                        <i id="refreshIcon" class="fa-solid fa-arrows-rotate"></i>
+                    </button>
+
+                    <button onclick="logout()" title="تسجيل الخروج" class="p-2.5 rounded-xl bg-rose-950/60 border border-rose-800/80 hover:bg-rose-900 text-rose-300 transition-all">
+                        <i class="fa-solid fa-arrow-right-from-bracket"></i>
+                    </button>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Body -->
+        <main class="max-w-7xl mx-auto px-4 py-6 flex-1 w-full space-y-6">
+            <!-- Stat Cards -->
+            <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                <div class="bg-navy-900 border border-slate-800 rounded-2xl p-4 flex items-center justify-between">
+                    <div>
+                        <span class="text-xs text-slate-400 font-bold block mb-1">إجمالي الاشتراكات</span>
+                        <span id="statTotal" class="text-2xl font-black text-white">0</span>
+                    </div>
+                    <div class="w-12 h-12 rounded-xl bg-blue-500/10 text-blue-400 flex items-center justify-center text-xl">
+                        <i class="fa-solid fa-users"></i>
+                    </div>
+                </div>
+
+                <div class="bg-navy-900 border border-amber-800/50 rounded-2xl p-4 flex items-center justify-between">
+                    <div>
+                        <span class="text-xs text-amber-300 font-bold block mb-1">بانتظار التفعيل</span>
+                        <span id="statPending" class="text-2xl font-black text-amber-400">0</span>
+                    </div>
+                    <div class="w-12 h-12 rounded-xl bg-amber-500/10 text-amber-400 flex items-center justify-center text-xl">
+                        <i class="fa-solid fa-hourglass-half"></i>
+                    </div>
+                </div>
+
+                <div class="bg-navy-900 border border-emerald-800/50 rounded-2xl p-4 flex items-center justify-between">
+                    <div>
+                        <span class="text-xs text-emerald-300 font-bold block mb-1">الاشتراكات النشطة</span>
+                        <span id="statActive" class="text-2xl font-black text-emerald-400">0</span>
+                    </div>
+                    <div class="w-12 h-12 rounded-xl bg-emerald-500/10 text-emerald-400 flex items-center justify-center text-xl">
+                        <i class="fa-solid fa-circle-check"></i>
+                    </div>
+                </div>
+
+                <div class="bg-navy-900 border border-slate-800 rounded-2xl p-4 flex items-center justify-between">
+                    <div>
+                        <span class="text-xs text-slate-400 font-bold block mb-1">المتوقفة والمنتهية</span>
+                        <span id="statInactive" class="text-2xl font-black text-slate-300">0</span>
+                    </div>
+                    <div class="w-12 h-12 rounded-xl bg-rose-500/10 text-rose-400 flex items-center justify-center text-xl">
+                        <i class="fa-solid fa-circle-pause"></i>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Filter & Search Toolbar -->
+            <div class="bg-navy-900 border border-slate-800 rounded-2xl p-4 flex flex-col md:flex-row items-center justify-between gap-3">
+                <!-- Status Tabs -->
+                <div class="flex items-center gap-1.5 overflow-x-auto w-full md:w-auto pb-1 md:pb-0 custom-scrollbar">
+                    <button onclick="setFilter('all')" id="tab_all" class="filter-tab px-3 py-1.5 rounded-xl text-xs font-bold transition-all bg-gold-500 text-navy-950">الكل</button>
+                    <button onclick="setFilter('pending')" id="tab_pending" class="filter-tab px-3 py-1.5 rounded-xl text-xs font-bold transition-all bg-navy-800 text-slate-300 hover:text-white">بانتظار التفعيل</button>
+                    <button onclick="setFilter('active')" id="tab_active" class="filter-tab px-3 py-1.5 rounded-xl text-xs font-bold transition-all bg-navy-800 text-slate-300 hover:text-white">نشطة</button>
+                    <button onclick="setFilter('paused')" id="tab_paused" class="filter-tab px-3 py-1.5 rounded-xl text-xs font-bold transition-all bg-navy-800 text-slate-300 hover:text-white">متوقفة مؤقتاً</button>
+                    <button onclick="setFilter('expired')" id="tab_expired" class="filter-tab px-3 py-1.5 rounded-xl text-xs font-bold transition-all bg-navy-800 text-slate-300 hover:text-white">منتهية</button>
+                </div>
+
+                <!-- Search Input -->
+                <div class="relative w-full md:w-80">
+                    <i class="fa-solid fa-magnifying-glass absolute right-3.5 top-3 text-slate-400 text-xs"></i>
+                    <input type="text" id="searchInput" oninput="renderTable()" placeholder="ابحث بمعرف الجهاز، الهاتف، أو المرجع..."
+                        class="w-full bg-navy-950 border border-slate-700 rounded-xl py-2 pr-9 pl-3 text-xs focus:outline-none focus:border-gold-500 text-white placeholder-slate-500">
+                </div>
+            </div>
+
+            <!-- Subscriptions Container -->
+            <div class="bg-navy-900 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
+                <div class="overflow-x-auto custom-scrollbar">
+                    <table class="w-full text-right text-xs">
+                        <thead class="bg-navy-950 text-slate-400 border-b border-slate-800 font-bold uppercase">
+                            <tr>
+                                <th class="py-3.5 px-4">معرف الجهاز (Device ID)</th>
+                                <th class="py-3.5 px-4">رقم المحول منه</th>
+                                <th class="py-3.5 px-4">الرقم المرجعي</th>
+                                <th class="py-3.5 px-4">وسيلة الدفع</th>
+                                <th class="py-3.5 px-4">الباقة والقيمة</th>
+                                <th class="py-3.5 px-4">الحالة</th>
+                                <th class="py-3.5 px-4">الأيام المتبقية</th>
+                                <th class="py-3.5 px-4 text-center">تعديل الأيام (+ / -)</th>
+                                <th class="py-3.5 px-4 text-center">الإجراءات</th>
+                            </tr>
+                        </thead>
+                        <tbody id="subsTableBody" class="divide-y divide-slate-800/60 font-medium">
+                            <!-- Injected dynamically -->
+                            <tr>
+                                <td colspan="9" class="text-center py-12 text-slate-500">
+                                    <i class="fa-solid fa-circle-notch fa-spin text-2xl text-gold-400 mb-2"></i>
+                                    <p>جاري تحميل طلبات المشتركين من سوبا بيز...</p>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </main>
+
+        <footer class="bg-navy-950 border-t border-slate-800/60 py-3 text-center text-xs text-slate-500">
+            فورني فلو &copy; 2026 - نظام إدارة الاشتراكات التجارية الآمن
+        </footer>
+    </div>
+
+    <!-- ============================================================== -->
+    <!-- 3. JAVASCRIPT LOGIC -->
+    <!-- ============================================================== -->
+    <script>
+        const DEFAULT_URL = 'https://httdsktwfnrkhhlcznzo.supabase.co';
+        const SIGNING_SECRET = "MobilyaTrack#CommercialLicense#2026!Secret";
+
+        let sbClient = null;
+        let subscriptions = [];
+        let currentFilter = 'all';
+
+        // Initialize Supabase - يُحقن المفتاح تلقائياً عبر متغيرات GitHub Actions في ملف config.js
+        function initSupabase() {
+            const env = window.__ENV__ || {};
+            const url = env.SUPABASE_URL || DEFAULT_URL;
+            const key = env.SUPABASE_ANON_KEY || '';
+
+            if (key && window.supabase) {
+                sbClient = window.supabase.createClient(url, key);
+            }
+        }
+
+        // Generate License Key with cryptographic HMAC-SHA256 signature
+        function generateLicenseKey(deviceCode, expiryToken) {
+            const cleanDevice = deviceCode.trim().toUpperCase();
+            const cleanExpiry = expiryToken.trim().toUpperCase();
+            const payload = `${cleanDevice}|${cleanExpiry}`;
+            const hash = CryptoJS.HmacSHA256(payload, SIGNING_SECRET);
+            const sig = hash.toString(CryptoJS.enc.Hex).substring(0, 8).toUpperCase();
+            return `MTK-${cleanExpiry}-${sig}`;
+        }
+
+        // Format Date to YYYYMMDD
+        function formatDateToToken(date) {
+            const y = date.getFullYear();
+            const m = String(date.getMonth() + 1).padStart(2, '0');
+            const d = String(date.getDate()).padStart(2, '0');
+            return `${y}${m}${d}`;
+        }
+
+        // Toast Helper
+        function showToast(msg, isSuccess = true) {
+            const toast = document.getElementById('toast');
+            const content = document.getElementById('toastContent');
+            const text = document.getElementById('toastMsg');
+            const icon = document.getElementById('toastIcon');
+
+            text.innerText = msg;
+            if (isSuccess) {
+                content.className = 'flex items-center gap-3 px-5 py-3 rounded-xl shadow-2xl text-sm font-bold bg-emerald-950 border border-emerald-700 text-emerald-200';
+                icon.className = 'fa-solid fa-circle-check text-emerald-400 text-lg';
+            } else {
+                content.className = 'flex items-center gap-3 px-5 py-3 rounded-xl shadow-2xl text-sm font-bold bg-rose-950 border border-rose-700 text-rose-200';
+                icon.className = 'fa-solid fa-triangle-exclamation text-rose-400 text-lg';
+            }
+
+            toast.classList.remove('hidden');
+            setTimeout(() => {
+                toast.classList.add('hidden');
+            }, 3500);
+        }
+
+        // Auth Listeners & Login
+        document.getElementById('loginForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const email = document.getElementById('loginEmail').value.trim();
+            const password = document.getElementById('loginPassword').value;
+            const errBox = document.getElementById('loginError');
+            const loginBtn = document.getElementById('loginBtn');
+
+            errBox.classList.add('hidden');
+            loginBtn.disabled = true;
+            loginBtn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> جاري التحقق...';
+
+            if (!sbClient) {
+                errBox.innerText = 'تنبيه أمني: لم يتم العثور على مفتاح Supabase Anon Key. يرجى التأكد من كتابة المفتاح في portal/config.js محلياً أو ضبطه في GitHub Actions.';
+                errBox.classList.remove('hidden');
+                loginBtn.disabled = false;
+                loginBtn.innerHTML = '<i class="fa-solid fa-right-to-bracket"></i> <span>تسجيل الدخول للإدارة</span>';
+                return;
+            }
+
+            try {
+                const { data, error } = await sbClient.auth.signInWithPassword({ email, password });
+                if (error) throw error;
+
+                document.getElementById('adminUserLabel').innerText = data.user.email;
+                showView('dashboard');
+                fetchSubscriptions();
+                showToast('مرحباً بك! تم تسجيل الدخول بنجاح');
+            } catch (err) {
+                errBox.innerText = 'خطأ في تسجيل الدخول: ' + (err.message || 'بيانات الدخول غير صحيحة');
+                errBox.classList.remove('hidden');
+            } finally {
+                loginBtn.disabled = false;
+                loginBtn.innerHTML = '<i class="fa-solid fa-right-to-bracket"></i> <span>تسجيل الدخول للإدارة</span>';
+            }
+        });
+
+        async function logout() {
+            if (sbClient) await sbClient.auth.signOut();
+            showView('login');
+            showToast('تم تسجيل الخروج');
+        }
+
+        function showView(view) {
+            document.getElementById('loginView').classList.toggle('hidden', view !== 'login');
+            document.getElementById('dashboardView').classList.toggle('hidden', view !== 'dashboard');
+        }
+
+        // Fetch Subscriptions
+        async function fetchSubscriptions() {
+            if (!sbClient) return;
+            const refreshIcon = document.getElementById('refreshIcon');
+            refreshIcon.classList.add('fa-spin');
+
+            try {
+                const { data, error } = await sbClient
+                    .from('app_subscriptions')
+                    .select('*')
+                    .order('created_at', { ascending: false });
+
+                if (error) throw error;
+                subscriptions = data || [];
+                updateStats();
+                renderTable();
+            } catch (err) {
+                showToast('تعذر جلب الاشتراكات: ' + err.message, false);
+            } finally {
+                refreshIcon.classList.remove('fa-spin');
+            }
+        }
+
+        function updateStats() {
+            document.getElementById('statTotal').innerText = subscriptions.length;
+            document.getElementById('statPending').innerText = subscriptions.filter(s => s.status === 'pending').length;
+            document.getElementById('statActive').innerText = subscriptions.filter(s => s.status === 'active').length;
+            document.getElementById('statInactive').innerText = subscriptions.filter(s => s.status === 'paused' || s.status === 'expired').length;
+        }
+
+        function setFilter(filter) {
+            currentFilter = filter;
+            document.querySelectorAll('.filter-tab').forEach(tab => {
+                tab.className = 'filter-tab px-3 py-1.5 rounded-xl text-xs font-bold transition-all bg-navy-800 text-slate-300 hover:text-white';
+            });
+            const activeTab = document.getElementById(`tab_${filter}`);
+            if (activeTab) {
+                activeTab.className = 'filter-tab px-3 py-1.5 rounded-xl text-xs font-bold transition-all bg-gold-500 text-navy-950';
+            }
+            renderTable();
+        }
+
+        function renderTable() {
+            const tbody = document.getElementById('subsTableBody');
+            const search = document.getElementById('searchInput').value.trim().toLowerCase();
+
+            let filtered = subscriptions;
+            if (currentFilter !== 'all') {
+                filtered = filtered.filter(s => s.status === currentFilter);
+            }
+
+            if (search) {
+                filtered = filtered.filter(s =>
+                    (s.device_code && s.device_code.toLowerCase().includes(search)) ||
+                    (s.sender_phone && s.sender_phone.includes(search)) ||
+                    (s.reference_no && s.reference_no.toLowerCase().includes(search))
+                );
+            }
+
+            if (filtered.length === 0) {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="9" class="text-center py-10 text-slate-400">
+                            لا توجد اشتراكات مطابقة للبحث أو التصفية الحالية.
+                        </td>
+                    </tr>
+                `;
+                return;
+            }
+
+            tbody.innerHTML = filtered.map(sub => {
+                // Status badge
+                let statusBadge = '';
+                if (sub.status === 'active') {
+                    statusBadge = '<span class="bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 px-2.5 py-1 rounded-lg font-bold">نشط</span>';
+                } else if (sub.status === 'pending') {
+                    statusBadge = '<span class="bg-amber-500/15 text-amber-400 border border-amber-500/30 px-2.5 py-1 rounded-lg font-bold animate-pulse">بانتظار التفعيل</span>';
+                } else if (sub.status === 'paused') {
+                    statusBadge = '<span class="bg-slate-500/20 text-slate-300 border border-slate-500/30 px-2.5 py-1 rounded-lg font-bold">متوقف مؤقتاً</span>';
+                } else {
+                    statusBadge = '<span class="bg-rose-500/15 text-rose-400 border border-rose-500/30 px-2.5 py-1 rounded-lg font-bold">منتهي</span>';
+                }
+
+                // Days remaining
+                let daysRem = 0;
+                let daysLabel = '-';
+                if (sub.expires_at) {
+                    const diffMs = new Date(sub.expires_at) - new Date();
+                    daysRem = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+                    if (daysRem > 0) {
+                        const colorClass = daysRem > 15 ? 'text-emerald-400' : 'text-amber-400';
+                        daysLabel = `<span class="${colorClass} font-black">${daysRem} يوم</span>`;
+                    } else {
+                        daysLabel = '<span class="text-rose-400 font-bold">منتهي</span>';
+                    }
+                }
+
+                // Payment Method
+                const isVodafone = sub.payment_method === 'vodafone_cash';
+                const methodBadge = isVodafone
+                    ? `<span class="inline-flex items-center gap-1.5 text-rose-400 font-bold"><img src="vodafone_cash.png" class="w-4 h-4 object-contain" onerror="this.remove()"> فودافون كاش</span>`
+                    : `<span class="inline-flex items-center gap-1.5 text-purple-400 font-bold"><img src="instapay.png" class="w-4 h-4 object-contain" onerror="this.remove()"> انستا باي</span>`;
+
+                // Plan Name
+                const planTitle = sub.plan_type === 'yearly' ? 'عام (365 يوم)' : sub.plan_type === 'half_yearly' ? '6 شهور (180 يوم)' : 'شهر (30 يوم)';
+
+                return `
+                    <tr class="hover:bg-navy-950/40 transition-colors">
+                        <td class="py-3 px-4">
+                            <div class="flex items-center gap-2">
+                                <span class="font-mono font-bold text-gold-400">${sub.device_code}</span>
+                                <button onclick="copyText('${sub.device_code}')" title="نسخ المعرف" class="text-slate-400 hover:text-white">
+                                    <i class="fa-regular fa-copy"></i>
+                                </button>
+                            </div>
+                            ${sub.license_key ? `<span class="text-[10px] text-slate-500 block font-mono mt-0.5 truncate max-w-[170px]" title="${sub.license_key}">${sub.license_key}</span>` : ''}
+                        </td>
+                        <td class="py-3 px-4 font-mono text-slate-300 font-bold">${sub.sender_phone || '-'}</td>
+                        <td class="py-3 px-4 font-mono text-slate-300">${sub.reference_no || '-'}</td>
+                        <td class="py-3 px-4">${methodBadge}</td>
+                        <td class="py-3 px-4">
+                            <span class="block text-slate-200 font-bold">${planTitle}</span>
+                            <span class="text-[11px] text-gold-500 font-bold">${sub.amount} ج.م</span>
+                        </td>
+                        <td class="py-3 px-4">${statusBadge}</td>
+                        <td class="py-3 px-4">${daysLabel}</td>
+                        <td class="py-3 px-4 text-center">
+                            <div class="inline-flex items-center gap-1 bg-navy-950 border border-slate-700 rounded-lg p-1">
+                                <input type="number" id="days_input_${sub.id}" value="${sub.plan_days || 30}"
+                                    class="w-14 bg-transparent text-center font-bold text-white text-xs focus:outline-none" title="عدد الأيام">
+                                <button onclick="adjustDays('${sub.id}', 1)" title="زيادة يوم" class="w-6 h-6 rounded bg-navy-800 hover:bg-gold-500 hover:text-navy-950 text-slate-300 transition-all font-bold text-xs">+</button>
+                                <button onclick="adjustDays('${sub.id}', -1)" title="خصم يوم" class="w-6 h-6 rounded bg-navy-800 hover:bg-gold-500 hover:text-navy-950 text-slate-300 transition-all font-bold text-xs">-</button>
+                                <button onclick="applyCustomDays('${sub.id}')" title="حفظ الأيام" class="px-1.5 py-0.5 rounded bg-blue-600 hover:bg-blue-500 text-white text-[10px] font-bold">تطبيق</button>
+                            </div>
+                        </td>
+                        <td class="py-3 px-4">
+                            <div class="flex items-center justify-center gap-1.5">
+                                ${sub.status !== 'active' ? `
+                                    <button onclick="activateSubscription('${sub.id}')" class="px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold flex items-center gap-1 shadow-md shadow-emerald-900/30 transition-all">
+                                        <i class="fa-solid fa-bolt"></i>
+                                        <span>تفعيل</span>
+                                    </button>
+                                ` : ''}
+
+                                <button onclick="togglePause('${sub.id}', '${sub.status}')" title="${sub.status === 'paused' ? 'استئناف' : 'إيقاف مؤقت'}"
+                                    class="p-1.5 rounded-lg bg-navy-800 hover:bg-slate-700 text-amber-400 border border-slate-700 transition-all">
+                                    <i class="fa-solid ${sub.status === 'paused' ? 'fa-play' : 'fa-pause'}"></i>
+                                </button>
+
+                                ${sub.license_key ? `
+                                    <button onclick="copyText('${sub.license_key}')" title="نسخ كود التفعيل التجاري" class="p-1.5 rounded-lg bg-navy-800 hover:bg-slate-700 text-blue-400 border border-slate-700 transition-all">
+                                        <i class="fa-solid fa-key"></i>
+                                    </button>
+                                ` : ''}
+
+                                <button onclick="deleteSubscription('${sub.id}')" title="حذف الاشتراك" class="p-1.5 rounded-lg bg-navy-800 hover:bg-rose-900 text-rose-400 border border-slate-700 transition-all">
+                                    <i class="fa-solid fa-trash-can"></i>
+                                </button>
+                            </div>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        // 1. Activate Subscription Instantly
+        async function activateSubscription(subId) {
+            const sub = subscriptions.find(s => s.id === subId);
+            if (!sub) return;
+
+            const daysInput = document.getElementById(`days_input_${subId}`);
+            const days = daysInput ? parseInt(daysInput.value) || sub.plan_days || 30 : sub.plan_days || 30;
+
+            const now = new Date();
+            const expiryDate = new Date(now.getTime() + days * 24 * 60 * 60 * 1000);
+            const expiryToken = formatDateToToken(expiryDate);
+            const licenseKey = generateLicenseKey(sub.device_code, expiryToken);
+
+            try {
+                const { error } = await sbClient
+                    .from('app_subscriptions')
+                    .update({
+                        status: 'active',
+                        license_key: licenseKey,
+                        plan_days: days,
+                        starts_at: now.toISOString(),
+                        expires_at: expiryDate.toISOString(),
+                        updated_at: now.toISOString()
+                    })
+                    .eq('id', subId);
+
+                if (error) throw error;
+                showToast(`تم تفعيل اشتراك الجهاز (${sub.device_code}) بنجاح لمدة ${days} يوم!`);
+                fetchSubscriptions();
+            } catch (err) {
+                showToast('فشل تفعيل الاشتراك: ' + err.message, false);
+            }
+        }
+
+        // 2. Adjust Days (+ / -)
+        async function adjustDays(subId, delta) {
+            const sub = subscriptions.find(s => s.id === subId);
+            if (!sub) return;
+
+            let baseDate = sub.expires_at ? new Date(sub.expires_at) : new Date();
+            if (baseDate < new Date()) baseDate = new Date();
+
+            const newExpiry = new Date(baseDate.getTime() + delta * 24 * 60 * 60 * 1000);
+            const expiryToken = formatDateToToken(newExpiry);
+            const newLicenseKey = generateLicenseKey(sub.device_code, expiryToken);
+            const newDays = Math.max(1, (sub.plan_days || 30) + delta);
+
+            try {
+                const { error } = await sbClient
+                    .from('app_subscriptions')
+                    .update({
+                        expires_at: newExpiry.toISOString(),
+                        plan_days: newDays,
+                        license_key: newLicenseKey,
+                        status: newExpiry > new Date() ? 'active' : 'expired',
+                        updated_at: new Date().toISOString()
+                    })
+                    .eq('id', subId);
+
+                if (error) throw error;
+                showToast(`تم تعديل مدة الاشتراك بمقدار (${delta > 0 ? '+' : ''}${delta} يوم)`);
+                fetchSubscriptions();
+            } catch (err) {
+                showToast('فشل تعديل الأيام: ' + err.message, false);
+            }
+        }
+
+        // 3. Apply Custom Typed Days
+        async function applyCustomDays(subId) {
+            const sub = subscriptions.find(s => s.id === subId);
+            if (!sub) return;
+
+            const input = document.getElementById(`days_input_${subId}`);
+            const days = parseInt(input.value);
+            if (isNaN(days) || days <= 0) {
+                showToast('يرجى كتابة عدد أيام صالح', false);
+                return;
+            }
+
+            const now = new Date();
+            const newExpiry = new Date(now.getTime() + days * 24 * 60 * 60 * 1000);
+            const expiryToken = formatDateToToken(newExpiry);
+            const newLicenseKey = generateLicenseKey(sub.device_code, expiryToken);
+
+            try {
+                const { error } = await sbClient
+                    .from('app_subscriptions')
+                    .update({
+                        expires_at: newExpiry.toISOString(),
+                        plan_days: days,
+                        license_key: newLicenseKey,
+                        status: 'active',
+                        updated_at: now.toISOString()
+                    })
+                    .eq('id', subId);
+
+                if (error) throw error;
+                showToast(`تم تعيين مدة الاشتراك إلى (${days} يوماً)`);
+                fetchSubscriptions();
+            } catch (err) {
+                showToast('فشل حفظ الأيام: ' + err.message, false);
+            }
+        }
+
+        // 4. Toggle Pause / Resume
+        async function togglePause(subId, currentStatus) {
+            const nextStatus = currentStatus === 'paused' ? 'active' : 'paused';
+            try {
+                const { error } = await sbClient
+                    .from('app_subscriptions')
+                    .update({ status: nextStatus, updated_at: new Date().toISOString() })
+                    .eq('id', subId);
+
+                if (error) throw error;
+                showToast(nextStatus === 'paused' ? 'تم إيقاف الاشتراك مؤقتاً' : 'تم استئناف الاشتراك بنجاح');
+                fetchSubscriptions();
+            } catch (err) {
+                showToast('تعذر تغيير حالة الاشتراك: ' + err.message, false);
+            }
+        }
+
+        // 5. Delete Subscription
+        async function deleteSubscription(subId) {
+            if (!confirm('هل أنت متأكد من رغبتك في حذف هذا الاشتراك نهائياً؟')) return;
+            try {
+                const { error } = await sbClient
+                    .from('app_subscriptions')
+                    .delete()
+                    .eq('id', subId);
+
+                if (error) throw error;
+                showToast('تم حذف الاشتراك بنجاح');
+                fetchSubscriptions();
+            } catch (err) {
+                showToast('تعذر الحذف: ' + err.message, false);
+            }
+        }
+
+        // Copy Text Helper
+        function copyText(text) {
+            navigator.clipboard.writeText(text).then(() => {
+                showToast('تم النسخ إلى الحافظة');
+            });
+        }
+
+        // Startup check session
+        window.addEventListener('DOMContentLoaded', async () => {
+            initSupabase();
+            if (!sbClient) {
+                console.warn('Supabase client not initialized. Waiting for config.js injection.');
+                showView('login');
+                return;
+            }
+            try {
+                const { data: { session } } = await sbClient.auth.getSession();
+                if (session) {
+                    document.getElementById('adminUserLabel').innerText = session.user.email;
+                    showView('dashboard');
+                    fetchSubscriptions();
+                } else {
+                    showView('login');
+                }
+            } catch (e) {
+                showView('login');
+            }
+        });
+    </script>
+</body>
+</html>

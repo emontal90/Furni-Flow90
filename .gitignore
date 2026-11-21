@@ -49,6 +49,11 @@ build/
 # Generated local APKs inside project releases folder
 releases/*.apk
 
+# Portal environment and secrets (injected via GitHub Actions)
+portal/config.js
+portal/env.js
+*.env
+
 # Release Signing Keys & Secrets (NEVER commit these!)
 android/key.properties
 **/key.properties

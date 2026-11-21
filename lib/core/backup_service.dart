@@ -9,6 +9,7 @@ import 'package:sqflite/sqflite.dart';
 import 'app_events.dart';
 import 'app_settings_service.dart';
 import 'backup_crypto.dart';
+import 'cloud_service.dart';
 import 'db_helper.dart';
 
 class BackupService {
@@ -482,6 +483,7 @@ if (\$dlg.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
 
         PaintingBinding.instance.imageCache.clear();
         await performDailyAutoBackup();
+        await CloudService.performDailySilentCloudBackup();
 
         final db = await DBHelper.instance.database;
         await db.execute('PRAGMA optimize');

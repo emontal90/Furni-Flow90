@@ -1,7 +1,7 @@
 name: furniture_erp
 description: فورني فلو (FurniFlow) - نظام متكامل لإدارة معارض الموبيليا والمخازن وورش التنجيد
 publish_to: 'none'
-version: 1.2.6+37
+version: 1.2.7+38
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
@@ -19,6 +19,7 @@ dependencies:
   sqflite_common_ffi: ^2.4.5
   sqlite3_flutter_libs: ^0.6.0+eol
   sqflite_common_ffi_web: ^1.2.1
+  http: ^1.6.0
 
 dev_dependencies:
   flutter_test:

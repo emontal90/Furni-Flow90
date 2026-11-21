@@ -9,6 +9,9 @@ import '../core/app_events.dart';
 import '../core/app_notification.dart';
 import '../core/app_theme.dart';
 import '../core/backup_service.dart';
+import '../core/cloud_service.dart';
+import '../core/security_storage_service.dart';
+import 'subscription_screen.dart';
 
 class BackupScreen extends StatefulWidget {
   final bool embedded;
@@ -26,6 +29,13 @@ class _BackupScreenState extends State<BackupScreen> {
   // فترة الأرشفة المختارة (بالشهور)
   int _selectedArchiveMonths = 6;
   int _eligibleForArchiveCount = 0;
+
+  // حالة النسخ الاحتياطي السحابي
+  List<CloudBackupItem> _cloudBackups = [];
+  bool _isCloudLoading = false;
+  bool _isUploadingCloud = false;
+  bool _isCloudSubscribed = false;
+  String _deviceCode = '';
 
   @override
   void initState() {
@@ -55,6 +65,145 @@ class _BackupScreenState extends State<BackupScreen> {
         _eligibleForArchiveCount = eligible;
         _isLoading = false;
       });
+    }
+    _loadCloudInfo();
+  }
+
+  Future<void> _loadCloudInfo() async {
+    if (kIsWeb) return;
+    setState(() => _isCloudLoading = true);
+    final code = await SecurityStorageService.getDeviceCode();
+    final eligible = await CloudService.isUserEligibleForCloudBackup();
+    List<CloudBackupItem> cloudItems = [];
+    if (eligible) {
+      cloudItems = await CloudService.fetchCloudBackups(code);
+    }
+    if (mounted) {
+      setState(() {
+        _deviceCode = code;
+        _isCloudSubscribed = eligible;
+        _cloudBackups = cloudItems;
+        _isCloudLoading = false;
+      });
+    }
+  }
+
+  Future<void> _uploadManualCloudBackup() async {
+    if (!_isCloudSubscribed) {
+      final sub = await Navigator.push<bool>(
+        context,
+        MaterialPageRoute(
+          builder: (_) => SubscriptionScreen(deviceCode: _deviceCode),
+        ),
+      );
+      if (sub == true) {
+        await _loadCloudInfo();
+      }
+      return;
+    }
+
+    setState(() => _isUploadingCloud = true);
+    final res = await CloudService.uploadEncryptedBackup(isAuto: false);
+    if (mounted) {
+      setState(() => _isUploadingCloud = false);
+      if (res.success) {
+        AppNotification.showSuccess(context, res.message);
+        await _loadCloudInfo();
+      } else {
+        AppNotification.showError(context, res.message);
+      }
+    }
+  }
+
+  Future<void> _confirmAndRestoreCloud(CloudBackupItem item) async {
+    final dateStr = intl.DateFormat('yyyy-MM-dd HH:mm').format(item.createdAt.toLocal());
+    final bool? confirm = await showDialog<bool>(
+      context: context,
+      builder: (dCtx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Row(
+          children: [
+            Icon(Icons.cloud_download_rounded, color: Colors.blue, size: 28),
+            SizedBox(width: 8),
+            Text('تأكيد الاستعادة من السحابة', style: TextStyle(fontSize: 16.5, fontWeight: FontWeight.bold)),
+          ],
+        ),
+        content: Text(
+          'تنبيه هام:\nاستعادة هذه النسخة السحابية المشفرة سيستبدل بيانات التطبيق الحالية بالبيانات المحفوظة سحابياً بتاريخ ($dateStr).\n\nحجم النسخة: ${item.fileSizeFormatted}\nاسم الملف: ${item.fileName}\n\nهل ترغب في المتابعة والاستعادة الآن؟',
+          style: const TextStyle(fontSize: 13.5),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dCtx, false),
+            child: const Text('إلغاء'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.blue.shade700,
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () => Navigator.pop(dCtx, true),
+            child: const Text('نعم، استعادة من السحابة'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm == true) {
+      setState(() => _isLoading = true);
+      final res = await CloudService.restoreFromCloud(item);
+      await _loadAllInfo();
+      if (mounted) {
+        setState(() => _isLoading = false);
+        if (res.success) {
+          AppNotification.showSuccess(context, res.message);
+        } else {
+          AppNotification.showError(context, res.message);
+        }
+      }
+    }
+  }
+
+  Future<void> _confirmAndDeleteCloud(CloudBackupItem item) async {
+    final bool? confirm = await showDialog<bool>(
+      context: context,
+      builder: (dCtx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Row(
+          children: [
+            Icon(Icons.delete_outline_rounded, color: Colors.red, size: 26),
+            SizedBox(width: 8),
+            Text('حذف نسخة سحابية', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+          ],
+        ),
+        content: Text(
+          'هل أنت متأكد من رغبتك في حذف النسخة السحابية (${item.fileName}) نهائياً؟',
+          style: const TextStyle(fontSize: 13.5),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dCtx, false),
+            child: const Text('إلغاء'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white),
+            onPressed: () => Navigator.pop(dCtx, true),
+            child: const Text('حذف الآن'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm == true) {
+      final ok = await CloudService.deleteCloudBackup(item);
+      if (mounted) {
+        if (ok) {
+          AppNotification.showSuccess(context, 'تم حذف النسخة من السحابة');
+          await _loadCloudInfo();
+        } else {
+          AppNotification.showError(context, 'تعذر حذف النسخة من السحابة');
+        }
+      }
     }
   }
 
@@ -778,6 +927,223 @@ class _BackupScreenState extends State<BackupScreen> {
                             ],
                           ],
                         ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 18),
+
+                // قسم النسخ الاحتياطي السحابي (سوبا بيز)
+                Card(
+                  elevation: 2,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                    side: BorderSide(
+                      color: _isCloudSubscribed
+                          ? Colors.teal.withValues(alpha: 0.5)
+                          : AppTheme.royalGold.withValues(alpha: 0.4),
+                    ),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Row(
+                          children: [
+                            Icon(
+                              Icons.cloud_done_rounded,
+                              color: _isCloudSubscribed ? Colors.teal : AppTheme.royalGold,
+                              size: 24,
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                'النسخ الاحتياطي السحابي المشفر',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                  color: AppTheme.textPrimary(context),
+                                ),
+                              ),
+                            ),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                              decoration: BoxDecoration(
+                                color: _isCloudSubscribed
+                                    ? Colors.teal.withValues(alpha: 0.15)
+                                    : Colors.amber.withValues(alpha: 0.18),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Text(
+                                _isCloudSubscribed
+                                    ? 'مساحة نشطة (${_cloudBackups.length}/5)'
+                                    : 'يتطلب اشتراك',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.bold,
+                                  color: _isCloudSubscribed ? Colors.teal.shade800 : Colors.amber.shade900,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'يتم حفظ نسخة احتياطية يومية مشفرة وصامتة على السحابة بحد أقصى 5 ملفات (حذف التلقائي للأقدم عند التجاوز). ويمكنك أيضاً رفع واستعادة النسخ يدوياً في أي وقت.',
+                          style: TextStyle(fontSize: 12.5, color: AppTheme.textMuted(context), height: 1.35),
+                        ),
+                        const SizedBox(height: 12),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: ElevatedButton.icon(
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: _isCloudSubscribed ? Colors.teal.shade700 : AppTheme.primaryNavy,
+                                  foregroundColor: _isCloudSubscribed ? Colors.white : AppTheme.royalGold,
+                                  padding: const EdgeInsets.symmetric(vertical: 12),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                ),
+                                onPressed: _isUploadingCloud ? null : _uploadManualCloudBackup,
+                                icon: _isUploadingCloud
+                                    ? const SizedBox(
+                                        width: 18,
+                                        height: 18,
+                                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                                      )
+                                    : Icon(_isCloudSubscribed ? Icons.cloud_upload_rounded : Icons.star_rounded, size: 20),
+                                label: Text(
+                                  _isUploadingCloud
+                                      ? 'جاري الرفع والتشفير...'
+                                      : _isCloudSubscribed
+                                          ? 'رفع نسخة سحابية مشفرة الآن'
+                                          : 'اشترك لتفعيل النسخ السحابي',
+                                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13.5),
+                                ),
+                              ),
+                            ),
+                            if (_isCloudSubscribed) ...[
+                              const SizedBox(width: 8),
+                              IconButton.outlined(
+                                tooltip: 'تحديث النسخ السحابية',
+                                onPressed: _isCloudLoading ? null : _loadCloudInfo,
+                                icon: _isCloudLoading
+                                    ? const SizedBox(
+                                        width: 16,
+                                        height: 16,
+                                        child: CircularProgressIndicator(strokeWidth: 2),
+                                      )
+                                    : const Icon(Icons.refresh, size: 18),
+                              ),
+                            ],
+                          ],
+                        ),
+                        if (_isCloudSubscribed) ...[
+                          const SizedBox(height: 14),
+                          const Divider(height: 1),
+                          const SizedBox(height: 10),
+                          Text(
+                            'النسخ المتوفرة على السحابة لهذا الجهاز:',
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.bold,
+                              color: AppTheme.textPrimary(context),
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          if (_cloudBackups.isEmpty)
+                            Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                              child: Center(
+                                child: Text(
+                                  'لا توجد نسخ سحابية محفوظة بعد. اضغط على الزر بالأعلى لرفع أول نسخة.',
+                                  style: TextStyle(fontSize: 12, color: AppTheme.textMuted(context)),
+                                ),
+                              ),
+                            )
+                          else
+                            ..._cloudBackups.map((cb) {
+                              final dt = cb.createdAt.toLocal();
+                              final dtStr = intl.DateFormat('yyyy-MM-dd hh:mm a').format(dt);
+                              return Container(
+                                margin: const EdgeInsets.only(bottom: 8),
+                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                decoration: BoxDecoration(
+                                  color: AppTheme.subtleBg(context),
+                                  borderRadius: BorderRadius.circular(10),
+                                  border: Border.all(color: AppTheme.borderColor(context)),
+                                ),
+                                child: Row(
+                                  children: [
+                                    Icon(
+                                      cb.isAuto ? Icons.auto_awesome_rounded : Icons.backup_rounded,
+                                      size: 20,
+                                      color: cb.isAuto ? Colors.indigo : Colors.teal,
+                                    ),
+                                    const SizedBox(width: 10),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Row(
+                                            children: [
+                                              Flexible(
+                                                child: Text(
+                                                  cb.fileName,
+                                                  style: TextStyle(
+                                                    fontSize: 12.5,
+                                                    fontWeight: FontWeight.bold,
+                                                    color: AppTheme.textPrimary(context),
+                                                  ),
+                                                  maxLines: 1,
+                                                  overflow: TextOverflow.ellipsis,
+                                                ),
+                                              ),
+                                              const SizedBox(width: 6),
+                                              Container(
+                                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                                                decoration: BoxDecoration(
+                                                  color: cb.isAuto ? Colors.indigo.withValues(alpha: 0.12) : Colors.teal.withValues(alpha: 0.12),
+                                                  borderRadius: BorderRadius.circular(4),
+                                                ),
+                                                child: Text(
+                                                  cb.isAuto ? 'تلقائي' : 'يدوي',
+                                                  style: TextStyle(
+                                                    fontSize: 9.5,
+                                                    fontWeight: FontWeight.bold,
+                                                    color: cb.isAuto ? Colors.indigo : Colors.teal,
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                          const SizedBox(height: 2),
+                                          Text(
+                                            '$dtStr • ${cb.fileSizeFormatted} (مشفر AES-256)',
+                                            style: TextStyle(fontSize: 11, color: AppTheme.textMuted(context)),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    TextButton.icon(
+                                      style: TextButton.styleFrom(
+                                        foregroundColor: Colors.blue.shade700,
+                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                      ),
+                                      onPressed: () => _confirmAndRestoreCloud(cb),
+                                      icon: const Icon(Icons.settings_backup_restore_rounded, size: 16),
+                                      label: const Text('استعادة', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold)),
+                                    ),
+                                    IconButton(
+                                      tooltip: 'حذف من السحابة',
+                                      icon: const Icon(Icons.delete_outline_rounded, size: 18, color: Colors.red),
+                                      onPressed: () => _confirmAndDeleteCloud(cb),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            }),
+                        ],
                       ],
                     ),
                   ),

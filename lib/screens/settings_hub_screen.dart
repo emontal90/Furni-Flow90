@@ -12,6 +12,7 @@ import '../core/app_update_service.dart';
 import '../core/app_version.dart';
 import '../core/license_service.dart';
 import 'backup_screen.dart';
+import 'subscription_screen.dart';
 
 class SettingsHubScreen extends StatefulWidget {
   final int initialTabIndex;
@@ -964,17 +965,44 @@ class _GeneralSettingsTabState extends State<_GeneralSettingsTab> {
                         'صالح حتى: ${intl.DateFormat('yyyy-MM-dd').format(_licenseInfo!.expiresAt!)}',
                         style: TextStyle(fontSize: 12, color: AppTheme.textMuted(context)),
                       ),
-                    const SizedBox(height: 8),
-                    SizedBox(
-                      width: double.infinity,
-                      child: OutlinedButton.icon(
-                        onPressed: _openLicenseActivationDialog,
-                        icon: const Icon(Icons.vpn_key_rounded, size: 18),
-                        label: Text(
-                          _licenseInfo!.isActivated ? 'تحديث كود التفعيل' : 'إدخال كود التفعيل التجاري',
-                          style: const TextStyle(fontWeight: FontWeight.bold),
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: ElevatedButton.icon(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: AppTheme.primaryNavy,
+                              foregroundColor: AppTheme.royalGold,
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                            ),
+                            onPressed: () async {
+                              final updated = await Navigator.push<bool>(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => SubscriptionScreen(
+                                    deviceCode: _licenseInfo!.deviceCode,
+                                  ),
+                                ),
+                              );
+                              if (updated == true || mounted) {
+                                await _loadSettings();
+                              }
+                            },
+                            icon: const Icon(Icons.star_rounded, size: 20),
+                            label: Text(
+                              _licenseInfo!.isActivated ? 'تجديد / ترقية الاشتراك' : 'اشترك الآن',
+                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                            ),
+                          ),
                         ),
-                      ),
+                        const SizedBox(width: 8),
+                        IconButton.outlined(
+                          tooltip: 'إدخال كود تفعيل تجاري يدوي',
+                          onPressed: _openLicenseActivationDialog,
+                          icon: const Icon(Icons.vpn_key_rounded, size: 18),
+                        ),
+                      ],
                     ),
                   ],
                 ),

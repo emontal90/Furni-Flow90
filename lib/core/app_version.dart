@@ -2,8 +2,8 @@
 class AppVersion {
   static const String appName = 'فورني فلو';
   static const String appNameEn = 'FurniFlow';
-  static const String version = '1.2.6';
-  static const int buildNumber = 37;
+  static const String version = '1.2.7';
+  static const int buildNumber = 38;
 
   static String get displayVersion => 'v$version';
   static String get fullVersion => 'v$version ($buildNumber)';

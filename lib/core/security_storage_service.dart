@@ -106,9 +106,27 @@ class SecurityStorageService {
   }
 
   /// استخراج بصمة الجهاز الفريدة (تُستخدم لربط الترخيص التجاري بالجهاز)
+  /// تضمن ثبات المعرف لكل جهاز حتى لو قام المستخدم بحذف التطبيق وإعادة تنزيله
   static Future<String> getDeviceCode() async {
     final cached = await getString('device_code');
     if (cached != null && cached.isNotEmpty) return cached;
+
+    // محاولة قراءة المعرف المحفوظ في مسار النظام الدائم خارج مجلد التطبيق القابل للحذف
+    if (!kIsWeb && Platform.isWindows) {
+      try {
+        final userProfile = Platform.environment['USERPROFILE'];
+        if (userProfile != null && userProfile.isNotEmpty) {
+          final fallbackFile = File(p.join(userProfile, '.furniflow_device_id'));
+          if (await fallbackFile.exists()) {
+            final savedCode = (await fallbackFile.readAsString()).trim();
+            if (savedCode.isNotEmpty && savedCode.startsWith('MT-')) {
+              await setString('device_code', savedCode);
+              return savedCode;
+            }
+          }
+        }
+      } catch (_) {}
+    }
 
     String rawHardwareId = '';
     if (!kIsWeb && Platform.isAndroid) {
@@ -119,10 +137,31 @@ class SecurityStorageService {
         }
       } catch (_) {}
     } else if (!kIsWeb && Platform.isWindows) {
+      // قراءة MachineGuid الفريد والثابت لنظام ويندوز من سجل النظام (Registry)
+      String machineGuid = '';
+      try {
+        final result = Process.runSync('reg', [
+          'query',
+          r'HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Cryptography',
+          '/v',
+          'MachineGuid',
+        ]);
+        if (result.exitCode == 0) {
+          final out = result.stdout.toString();
+          final match = RegExp(r'MachineGuid\s+REG_\w+\s+([a-fA-F0-9-]+)').firstMatch(out);
+          if (match != null && match.group(1) != null) {
+            machineGuid = match.group(1)!.trim();
+          }
+        }
+      } catch (_) {}
+
       final host = Platform.environment['COMPUTERNAME'] ?? '';
       final user = Platform.environment['USERNAME'] ?? '';
       final proc = Platform.environment['PROCESSOR_IDENTIFIER'] ?? '';
-      if (host.isNotEmpty) {
+
+      if (machineGuid.isNotEmpty) {
+        rawHardwareId = 'WIN:GUID:$machineGuid';
+      } else if (host.isNotEmpty) {
         rawHardwareId = 'WIN:$host:$user:$proc';
       }
     }
@@ -137,6 +176,18 @@ class SecurityStorageService {
     final hex = BackupCrypto.toHexUpper(hash).substring(0, 12);
     final formatted = 'MT-${hex.substring(0, 4)}-${hex.substring(4, 8)}-${hex.substring(8, 12)}';
     await setString('device_code', formatted);
+
+    // حفظ نسخة احتياطية في ملف ثابت لضمان عدم تغيره عند مسح التطبيق
+    if (!kIsWeb && Platform.isWindows) {
+      try {
+        final userProfile = Platform.environment['USERPROFILE'];
+        if (userProfile != null && userProfile.isNotEmpty) {
+          final fallbackFile = File(p.join(userProfile, '.furniflow_device_id'));
+          await fallbackFile.writeAsString(formatted, flush: true);
+        }
+      } catch (_) {}
+    }
+
     return formatted;
   }
 

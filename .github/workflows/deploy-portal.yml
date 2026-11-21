@@ -1,0 +1,59 @@
+name: Deploy Admin Portal to GitHub Pages
+
+on:
+  push:
+    branches: [ "main" ]
+    paths:
+      - 'portal/**'
+      - '.github/workflows/deploy-portal.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup GitHub Pages
+        uses: actions/configure-pages@v4
+
+      - name: Inject Supabase Credentials from GitHub Variables / Secrets
+        env:
+          SB_URL: ${{ vars.SUPABASE_URL || secrets.SUPABASE_URL || 'https://httdsktwfnrkhhlcznzo.supabase.co' }}
+          SB_KEY: ${{ secrets.SUPABASE_ANON_KEY || vars.SUPABASE_ANON_KEY }}
+        run: |
+          if [ -z "$SB_KEY" ]; then
+            echo "::error::SUPABASE_ANON_KEY is missing! Please configure SUPABASE_ANON_KEY in GitHub Repo Settings -> Secrets and variables -> Actions."
+            exit 1
+          fi
+
+          echo "Injecting Supabase configuration into portal/config.js securely..."
+          cat << EOF > portal/config.js
+          window.__ENV__ = {
+            SUPABASE_URL: "$SB_URL",
+            SUPABASE_ANON_KEY: "$SB_KEY"
+          };
+          EOF
+          chmod 644 portal/config.js
+
+      - name: Upload Portal Artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: 'portal'
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
