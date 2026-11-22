@@ -103,7 +103,10 @@
                     <div class="relative">
                         <i class="fa-solid fa-lock absolute right-3.5 top-3.5 text-slate-400"></i>
                         <input type="password" id="loginPassword" required placeholder="••••••••" dir="ltr"
-                            class="w-full bg-navy-950 border border-slate-700 rounded-xl py-2.5 pr-10 pl-3 text-sm focus:outline-none focus:border-gold-500 text-white placeholder-slate-500">
+                            class="w-full bg-navy-950 border border-slate-700 rounded-xl py-2.5 pr-10 pl-10 text-sm focus:outline-none focus:border-gold-500 text-white placeholder-slate-500">
+                        <button type="button" onclick="togglePasswordVisibility()" class="absolute left-3.5 top-3 text-slate-400 hover:text-gold-400 transition-colors cursor-pointer" title="إظهار / إخفاء كلمة المرور">
+                            <i id="passwordToggleIcon" class="fa-solid fa-eye"></i>
+                        </button>
                     </div>
                 </div>
 
@@ -277,6 +280,21 @@
 
             if (key && window.supabase) {
                 sbClient = window.supabase.createClient(url, key);
+            }
+        }
+
+        // إظهار وإخفاء كلمة المرور في شاشة الدخول
+        function togglePasswordVisibility() {
+            const input = document.getElementById('loginPassword');
+            const icon = document.getElementById('passwordToggleIcon');
+            if (input.type === 'password') {
+                input.type = 'text';
+                icon.classList.remove('fa-eye');
+                icon.classList.add('fa-eye-slash');
+            } else {
+                input.type = 'password';
+                icon.classList.remove('fa-eye-slash');
+                icon.classList.add('fa-eye');
             }
         }
 
