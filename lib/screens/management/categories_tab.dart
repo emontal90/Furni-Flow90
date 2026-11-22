@@ -17,8 +17,9 @@ class CategoriesTab extends StatefulWidget {
 class _MenuPieceItem {
   final TextEditingController nameCtrl;
   final TextEditingController qtyCtrl;
+  final bool isTable;
 
-  _MenuPieceItem({String name = '', int qty = 1})
+  _MenuPieceItem({String name = '', int qty = 1, this.isTable = false})
       : nameCtrl = TextEditingController(text: name),
         qtyCtrl = TextEditingController(text: qty > 0 ? qty.toString() : '1');
 
@@ -142,6 +143,129 @@ class _CategoriesTabState extends State<CategoriesTab> {
   }
 
   // ---------------------------------------------------------------------------
+  // بناء صف إدخال قطعة (سواء كانت قطعة طقم أساسي أو قطعة ترابيزة)
+  // ---------------------------------------------------------------------------
+  Widget _buildPieceRow({
+    required BuildContext ctx,
+    required int idx,
+    required _MenuPieceItem piece,
+    required void Function(void Function()) setModalState,
+    required VoidCallback onDelete,
+    required bool canDelete,
+    bool isTable = false,
+  }) {
+    final themeColor = isTable ? const Color(0xFF0D9488) : AppTheme.primaryNavy;
+    final rowBg = isTable ? const Color(0xFFF0FDFA) : Colors.white;
+    final rowBorder = isTable ? const Color(0xFF99F6E4) : Colors.grey.shade300;
+    final iconData = isTable ? Icons.table_restaurant_rounded : Icons.chair_outlined;
+    final labelText = isTable ? 'قطعة ترابيزة ${idx + 1}' : 'اسم القطعة ${idx + 1}';
+    final hintText = isTable ? 'مثال: ترابيزة وسط، ترابيزة جانبية...' : 'مثال: فوتيه، كنبة...';
+
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: rowBg,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: rowBorder),
+      ),
+      child: Row(
+        children: [
+          Icon(iconData, color: themeColor, size: 22),
+          const SizedBox(width: 8),
+          Expanded(
+            flex: 3,
+            child: TextField(
+              controller: piece.nameCtrl,
+              decoration: InputDecoration(
+                labelText: labelText,
+                hintText: hintText,
+                labelStyle: TextStyle(color: isTable ? const Color(0xFF0F766E) : null),
+                isDense: true,
+                contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: BorderSide(color: themeColor, width: 1.5),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Material(
+            color: Colors.red.shade50,
+            borderRadius: BorderRadius.circular(8),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(8),
+              onTap: () {
+                int q = int.tryParse(piece.qtyCtrl.text.trim()) ?? 1;
+                if (q > 1) {
+                  setModalState(() {
+                    piece.qtyCtrl.text = '${q - 1}';
+                  });
+                }
+              },
+              child: const Padding(
+                padding: EdgeInsets.all(8.0),
+                child: Icon(Icons.remove, color: Colors.red, size: 22),
+              ),
+            ),
+          ),
+          Container(
+            width: 46,
+            margin: const EdgeInsets.symmetric(horizontal: 4),
+            child: TextField(
+              controller: piece.qtyCtrl,
+              keyboardType: TextInputType.number,
+              textAlign: TextAlign.center,
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: themeColor),
+              decoration: InputDecoration(
+                isDense: true,
+                contentPadding: const EdgeInsets.symmetric(horizontal: 4, vertical: 10),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: BorderSide(color: themeColor, width: 1.5),
+                ),
+              ),
+            ),
+          ),
+          Material(
+            color: Colors.green.shade50,
+            borderRadius: BorderRadius.circular(8),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(8),
+              onTap: () {
+                int q = int.tryParse(piece.qtyCtrl.text.trim()) ?? 1;
+                setModalState(() {
+                  piece.qtyCtrl.text = '${q + 1}';
+                });
+              },
+              child: const Padding(
+                padding: EdgeInsets.all(8.0),
+                child: Icon(Icons.add, color: Colors.green, size: 22),
+              ),
+            ),
+          ),
+          const SizedBox(width: 6),
+          if (canDelete)
+            IconButton(
+              icon: const Icon(Icons.delete_outline, color: Colors.red, size: 22),
+              tooltip: 'حذف القطعة',
+              onPressed: () {
+                _confirmDeletePiece(
+                  ctx,
+                  piece.nameCtrl.text,
+                  onDelete,
+                );
+              },
+            ),
+        ],
+      ),
+    );
+  }
+
+  // ---------------------------------------------------------------------------
   // نافذة إضافة صنف جديد (تحديد اسم الطقم ومكوناته والعدد الافتراضي لكل قطعة)
   // ---------------------------------------------------------------------------
   void _openAddDialog() {
@@ -153,6 +277,9 @@ class _CategoriesTabState extends State<CategoriesTab> {
       _MenuPieceItem(name: 'كنبة صغيرة', qty: 1),
       _MenuPieceItem(name: 'فوتيه', qty: 2),
     ];
+
+    // قائمة قطع طقم الترابيزات التأسيسية (اختياري)
+    final List<_MenuPieceItem> tablePieces = [];
 
     showModalBottomSheet<void>(
       context: context,
@@ -190,7 +317,7 @@ class _CategoriesTabState extends State<CategoriesTab> {
                 ),
                 const SizedBox(height: 6),
                 const Text(
-                  'أدخل اسم الطقم وحدد مكوناته والعدد التأسيسي لكل قطعة في الطقم الواحد (مثلاً: 2 فوتيه + 1 كنبة).',
+                  'أدخل اسم الطقم وحدد مكونات الطقم الأساسي وكذلك طقم الترابيزات إن وجد.',
                   style: TextStyle(color: Colors.black54, fontSize: 13),
                 ),
                 const SizedBox(height: 16),
@@ -207,13 +334,13 @@ class _CategoriesTabState extends State<CategoriesTab> {
                 const SizedBox(height: 16),
                 const Divider(),
 
-                // 2. مكونات الطقم وأعداد القطع بالطقم الواحد
+                // 2. مكونات الطقم الأساسي
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     const Text(
-                      'مكونات الطقم وأعدادها للطقم الواحد:',
-                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: AppTheme.primaryNavy),
+                      'مكونات الطقم الأساسي (كنب، كراسي، فوتيهات):',
+                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14.5, color: AppTheme.primaryNavy),
                     ),
                     TextButton.icon(
                       onPressed: () {
@@ -226,135 +353,114 @@ class _CategoriesTabState extends State<CategoriesTab> {
                     ),
                   ],
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 6),
 
-                // قائمة إدخال القطع مع أعدادها
+                // قائمة إدخال قطع الطقم الأساسي
                 ...pieces.asMap().entries.map((entry) {
                   final idx = entry.key;
                   final piece = entry.value;
-                  return Container(
-                    margin: const EdgeInsets.symmetric(vertical: 4),
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: Colors.grey.shade300),
-                    ),
-                    child: Row(
-                      children: [
-                        const Icon(Icons.chair_outlined, color: AppTheme.primaryNavy, size: 22),
-                        const SizedBox(width: 8),
-
-                        // حقل اسم القطعة
-                        Expanded(
-                          flex: 3,
-                          child: TextField(
-                            controller: piece.nameCtrl,
-                            decoration: InputDecoration(
-                              labelText: 'اسم القطعة ${idx + 1}',
-                              hintText: 'مثال: فوتيه، كنبة...',
-                              isDense: true,
-                              contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-
-                        // زر إنقاص عدد القطعة
-                        Material(
-                          color: Colors.red.shade50,
-                          borderRadius: BorderRadius.circular(8),
-                          child: InkWell(
-                            borderRadius: BorderRadius.circular(8),
-                            onTap: () {
-                              int q = int.tryParse(piece.qtyCtrl.text.trim()) ?? 1;
-                              if (q > 1) {
-                                setModalState(() {
-                                  piece.qtyCtrl.text = '${q - 1}';
-                                });
-                              }
-                            },
-                            child: const Padding(
-                              padding: EdgeInsets.all(8.0),
-                              child: Icon(Icons.remove, color: Colors.red, size: 22),
-                            ),
-                          ),
-                        ),
-
-                        // حقل عدد القطع بالطقم
-                        Container(
-                          width: 46,
-                          margin: const EdgeInsets.symmetric(horizontal: 4),
-                          child: TextField(
-                            controller: piece.qtyCtrl,
-                            keyboardType: TextInputType.number,
-                            textAlign: TextAlign.center,
-                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-                            decoration: InputDecoration(
-                              isDense: true,
-                              contentPadding: const EdgeInsets.symmetric(horizontal: 4, vertical: 10),
-                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                            ),
-                          ),
-                        ),
-
-                        // زر زيادة عدد القطعة
-                        Material(
-                          color: Colors.green.shade50,
-                          borderRadius: BorderRadius.circular(8),
-                          child: InkWell(
-                            borderRadius: BorderRadius.circular(8),
-                            onTap: () {
-                              int q = int.tryParse(piece.qtyCtrl.text.trim()) ?? 1;
-                              setModalState(() {
-                                piece.qtyCtrl.text = '${q + 1}';
-                              });
-                            },
-                            child: const Padding(
-                              padding: EdgeInsets.all(8.0),
-                              child: Icon(Icons.add, color: Colors.green, size: 22),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 6),
-
-                        if (pieces.length > 1)
-                          IconButton(
-                            icon: const Icon(Icons.delete_outline, color: Colors.red, size: 22),
-                            tooltip: 'حذف القطعة',
-                            onPressed: () {
-                              _confirmDeletePiece(
-                                ctx,
-                                piece.nameCtrl.text,
-                                () {
-                                  setModalState(() {
-                                    pieces.removeAt(idx);
-                                  });
-                                },
-                              );
-                            },
-                          ),
-                      ],
-                    ),
+                  return _buildPieceRow(
+                    ctx: ctx,
+                    idx: idx,
+                    piece: piece,
+                    setModalState: setModalState,
+                    canDelete: pieces.length > 1,
+                    isTable: false,
+                    onDelete: () {
+                      setModalState(() {
+                        pieces.removeAt(idx);
+                      });
+                    },
                   );
                 }),
-                const SizedBox(height: 8),
+                const SizedBox(height: 6),
 
-                // زر إضافة قطعة أخرى
                 OutlinedButton.icon(
                   style: OutlinedButton.styleFrom(
                     foregroundColor: AppTheme.primaryNavy,
                     side: const BorderSide(color: AppTheme.primaryNavy),
-                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    padding: const EdgeInsets.symmetric(vertical: 8),
                   ),
                   onPressed: () {
                     setModalState(() {
                       pieces.add(_MenuPieceItem(name: '', qty: 1));
                     });
                   },
-                  icon: const Icon(Icons.add),
-                  label: const Text('إضافة قطعة أخرى للطقم', style: TextStyle(fontWeight: FontWeight.bold)),
+                  icon: const Icon(Icons.add, size: 18),
+                  label: const Text('إضافة قطعة أخرى للطقم الأساسي', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                ),
+
+                const SizedBox(height: 16),
+
+                // 3. فاصل وقسم طقم الترابيزات
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF0FDFA),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: const Color(0xFF5EEAD4)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Row(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.all(6),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFF0D9488).withValues(alpha: 0.15),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: const Icon(Icons.table_restaurant_rounded, color: Color(0xFF0D9488), size: 20),
+                              ),
+                              const SizedBox(width: 8),
+                              const Text(
+                                'قسم طقم الترابيزات (اختياري):',
+                                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Color(0xFF0F766E)),
+                              ),
+                            ],
+                          ),
+                          TextButton.icon(
+                            onPressed: () {
+                              setModalState(() {
+                                tablePieces.add(_MenuPieceItem(name: '', qty: 1, isTable: true));
+                              });
+                            },
+                            icon: const Icon(Icons.add_circle, color: Color(0xFF0D9488), size: 18),
+                            label: const Text('إضافة ترابيزة (+)', style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF0D9488), fontSize: 13)),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      const Text(
+                        'حدد قطع الترابيزات وأعدادها التأسيسية التابعة لهذا الصنف (مثال: ترابيزة وسط: 1، ترابيزات جانبية: 2).',
+                        style: TextStyle(color: Color(0xFF115E59), fontSize: 11.5),
+                      ),
+                      if (tablePieces.isNotEmpty) ...[
+                        const SizedBox(height: 8),
+                        ...tablePieces.asMap().entries.map((entry) {
+                          final idx = entry.key;
+                          final piece = entry.value;
+                          return _buildPieceRow(
+                            ctx: ctx,
+                            idx: idx,
+                            piece: piece,
+                            setModalState: setModalState,
+                            canDelete: true,
+                            isTable: true,
+                            onDelete: () {
+                              setModalState(() {
+                                tablePieces.removeAt(idx);
+                              });
+                            },
+                          );
+                        }),
+                      ],
+                    ],
+                  ),
                 ),
                 const SizedBox(height: 20),
 
@@ -382,6 +488,21 @@ class _CategoriesTabState extends State<CategoriesTab> {
                           'name': pName,
                           'base_qty': safeQty,
                           'qty': 0, // رصيد صفر لكل القطع بالمخزن عند إدراج الصنف الجديد
+                          'is_table': false,
+                        });
+                      }
+                    }
+
+                    for (final p in tablePieces) {
+                      final pName = p.nameCtrl.text.trim();
+                      if (pName.isNotEmpty) {
+                        final pQty = int.tryParse(p.qtyCtrl.text.trim()) ?? 1;
+                        final int safeQty = pQty > 0 ? pQty : 1;
+                        compsData.add({
+                          'name': pName,
+                          'base_qty': safeQty,
+                          'qty': 0,
+                          'is_table': true,
                         });
                       }
                     }
@@ -423,6 +544,9 @@ class _CategoriesTabState extends State<CategoriesTab> {
       for (final p in pieces) {
         p.dispose();
       }
+      for (final p in tablePieces) {
+        p.dispose();
+      }
     });
   }
 
@@ -437,13 +561,21 @@ class _CategoriesTabState extends State<CategoriesTab> {
       rawComps = jsonDecode(cat['components_json'] ?? '[]');
     } catch (_) {}
 
-    final List<_MenuPieceItem> pieces = rawComps.map((c) {
+    final List<_MenuPieceItem> pieces = [];
+    final List<_MenuPieceItem> tablePieces = [];
+
+    for (final c in rawComps) {
       final String pName = (c['name'] ?? '').toString();
       final int pQty = (c['base_qty'] is int)
           ? c['base_qty'] as int
           : ((c['qty'] is int) ? c['qty'] as int : (int.tryParse(c['qty']?.toString() ?? '1') ?? 1));
-      return _MenuPieceItem(name: pName, qty: pQty);
-    }).toList();
+      final bool isTable = CategoryStockHelper.isTablePiece(c);
+      if (isTable) {
+        tablePieces.add(_MenuPieceItem(name: pName, qty: pQty, isTable: true));
+      } else {
+        pieces.add(_MenuPieceItem(name: pName, qty: pQty, isTable: false));
+      }
+    }
 
     if (pieces.isEmpty) {
       pieces.add(_MenuPieceItem(name: 'كنبة كبيرة', qty: 1));
@@ -495,7 +627,7 @@ class _CategoriesTabState extends State<CategoriesTab> {
                 ),
                 const SizedBox(height: 6),
                 const Text(
-                  'تعديل اسم الطقم ومكوناته وأعداد القطع في الطقم الواحد.',
+                  'تعديل اسم الطقم ومكونات الطقم الأساسي وكذلك طقم الترابيزات.',
                   style: TextStyle(color: Colors.black54, fontSize: 13),
                 ),
                 const SizedBox(height: 16),
@@ -512,13 +644,13 @@ class _CategoriesTabState extends State<CategoriesTab> {
                 const SizedBox(height: 16),
                 const Divider(),
 
-                // 2. مكونات الطقم وأعدادها
+                // 2. مكونات الطقم الأساسي
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     const Text(
-                      'مكونات الطقم وأعدادها للطقم الواحد:',
-                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: AppTheme.primaryNavy),
+                      'مكونات الطقم الأساسي (كنب، كراسي، فوتيهات):',
+                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14.5, color: AppTheme.primaryNavy),
                     ),
                     TextButton.icon(
                       onPressed: () {
@@ -531,134 +663,114 @@ class _CategoriesTabState extends State<CategoriesTab> {
                     ),
                   ],
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 6),
 
-                // قائمة القطع
+                // قائمة قطع الطقم الأساسي
                 ...pieces.asMap().entries.map((entry) {
                   final idx = entry.key;
                   final piece = entry.value;
-                  return Container(
-                    margin: const EdgeInsets.symmetric(vertical: 4),
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: Colors.grey.shade300),
-                    ),
-                    child: Row(
-                      children: [
-                        const Icon(Icons.chair_outlined, color: AppTheme.primaryNavy, size: 22),
-                        const SizedBox(width: 8),
-
-                        // اسم القطعة
-                        Expanded(
-                          flex: 3,
-                          child: TextField(
-                            controller: piece.nameCtrl,
-                            decoration: InputDecoration(
-                              labelText: 'اسم القطعة ${idx + 1}',
-                              hintText: 'مثال: فوتيه، كنبة...',
-                              isDense: true,
-                              contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-
-                        // زر إنقاص عدد القطعة
-                        Material(
-                          color: Colors.red.shade50,
-                          borderRadius: BorderRadius.circular(8),
-                          child: InkWell(
-                            borderRadius: BorderRadius.circular(8),
-                            onTap: () {
-                              int q = int.tryParse(piece.qtyCtrl.text.trim()) ?? 1;
-                              if (q > 1) {
-                                setModalState(() {
-                                  piece.qtyCtrl.text = '${q - 1}';
-                                });
-                              }
-                            },
-                            child: const Padding(
-                              padding: EdgeInsets.all(8.0),
-                              child: Icon(Icons.remove, color: Colors.red, size: 22),
-                            ),
-                          ),
-                        ),
-
-                        // حقل عدد القطع
-                        Container(
-                          width: 46,
-                          margin: const EdgeInsets.symmetric(horizontal: 4),
-                          child: TextField(
-                            controller: piece.qtyCtrl,
-                            keyboardType: TextInputType.number,
-                            textAlign: TextAlign.center,
-                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-                            decoration: InputDecoration(
-                              isDense: true,
-                              contentPadding: const EdgeInsets.symmetric(horizontal: 4, vertical: 10),
-                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                            ),
-                          ),
-                        ),
-
-                        // زر زيادة عدد القطعة
-                        Material(
-                          color: Colors.green.shade50,
-                          borderRadius: BorderRadius.circular(8),
-                          child: InkWell(
-                            borderRadius: BorderRadius.circular(8),
-                            onTap: () {
-                              int q = int.tryParse(piece.qtyCtrl.text.trim()) ?? 1;
-                              setModalState(() {
-                                piece.qtyCtrl.text = '${q + 1}';
-                              });
-                            },
-                            child: const Padding(
-                              padding: EdgeInsets.all(8.0),
-                              child: Icon(Icons.add, color: Colors.green, size: 22),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 6),
-
-                        if (pieces.length > 1)
-                          IconButton(
-                            icon: const Icon(Icons.delete_outline, color: Colors.red, size: 22),
-                            tooltip: 'حذف القطعة',
-                            onPressed: () {
-                              _confirmDeletePiece(
-                                ctx,
-                                piece.nameCtrl.text,
-                                () {
-                                  setModalState(() {
-                                    pieces.removeAt(idx);
-                                  });
-                                },
-                              );
-                            },
-                          ),
-                      ],
-                    ),
+                  return _buildPieceRow(
+                    ctx: ctx,
+                    idx: idx,
+                    piece: piece,
+                    setModalState: setModalState,
+                    canDelete: pieces.length > 1,
+                    isTable: false,
+                    onDelete: () {
+                      setModalState(() {
+                        pieces.removeAt(idx);
+                      });
+                    },
                   );
                 }),
-                const SizedBox(height: 8),
+                const SizedBox(height: 6),
 
                 OutlinedButton.icon(
                   style: OutlinedButton.styleFrom(
                     foregroundColor: AppTheme.primaryNavy,
                     side: const BorderSide(color: AppTheme.primaryNavy),
-                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    padding: const EdgeInsets.symmetric(vertical: 8),
                   ),
                   onPressed: () {
                     setModalState(() {
                       pieces.add(_MenuPieceItem(name: '', qty: 1));
                     });
                   },
-                  icon: const Icon(Icons.add),
-                  label: const Text('إضافة قطعة أخرى للطقم', style: TextStyle(fontWeight: FontWeight.bold)),
+                  icon: const Icon(Icons.add, size: 18),
+                  label: const Text('إضافة قطعة أخرى للطقم الأساسي', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                ),
+
+                const SizedBox(height: 16),
+
+                // 3. فاصل وقسم طقم الترابيزات
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF0FDFA),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: const Color(0xFF5EEAD4)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Row(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.all(6),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFF0D9488).withValues(alpha: 0.15),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: const Icon(Icons.table_restaurant_rounded, color: Color(0xFF0D9488), size: 20),
+                              ),
+                              const SizedBox(width: 8),
+                              const Text(
+                                'قسم طقم الترابيزات (اختياري):',
+                                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Color(0xFF0F766E)),
+                              ),
+                            ],
+                          ),
+                          TextButton.icon(
+                            onPressed: () {
+                              setModalState(() {
+                                tablePieces.add(_MenuPieceItem(name: '', qty: 1, isTable: true));
+                              });
+                            },
+                            icon: const Icon(Icons.add_circle, color: Color(0xFF0D9488), size: 18),
+                            label: const Text('إضافة ترابيزة (+)', style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF0D9488), fontSize: 13)),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      const Text(
+                        'حدد قطع الترابيزات وأعدادها التأسيسية التابعة لهذا الصنف.',
+                        style: TextStyle(color: Color(0xFF115E59), fontSize: 11.5),
+                      ),
+                      if (tablePieces.isNotEmpty) ...[
+                        const SizedBox(height: 8),
+                        ...tablePieces.asMap().entries.map((entry) {
+                          final idx = entry.key;
+                          final piece = entry.value;
+                          return _buildPieceRow(
+                            ctx: ctx,
+                            idx: idx,
+                            piece: piece,
+                            setModalState: setModalState,
+                            canDelete: true,
+                            isTable: true,
+                            onDelete: () {
+                              setModalState(() {
+                                tablePieces.removeAt(idx);
+                              });
+                            },
+                          );
+                        }),
+                      ],
+                    ],
+                  ),
                 ),
                 const SizedBox(height: 20),
 
@@ -677,7 +789,6 @@ class _CategoriesTabState extends State<CategoriesTab> {
                     }
 
                     final compsData = <Map<String, dynamic>>[];
-                    final int existingStockQty = (cat['stock_qty'] as int?) ?? 0;
                     for (final p in pieces) {
                       final pName = p.nameCtrl.text.trim();
                       if (pName.isNotEmpty) {
@@ -685,26 +796,47 @@ class _CategoriesTabState extends State<CategoriesTab> {
                         final safeQty = pQty > 0 ? pQty : 1;
 
                         int currentPieceStock = 0;
-                        if (existingStockQty > 0) {
-                          final match = rawComps.firstWhere(
-                            (c) => (c['name'] ?? '').toString().trim() == pName,
-                            orElse: () => null,
-                          );
-                          if (match != null && match['qty'] != null) {
-                            currentPieceStock = (match['qty'] is int)
-                                ? match['qty'] as int
-                                : (int.tryParse(match['qty'].toString()) ?? (existingStockQty * safeQty));
-                          } else {
-                            currentPieceStock = existingStockQty * safeQty;
-                          }
-                        } else {
-                          currentPieceStock = 0;
+                        final match = rawComps.firstWhere(
+                          (c) => (c['name'] ?? '').toString().trim() == pName,
+                          orElse: () => null,
+                        );
+                        if (match != null && match['qty'] != null) {
+                          currentPieceStock = (match['qty'] is int)
+                              ? match['qty'] as int
+                              : (int.tryParse(match['qty'].toString()) ?? 0);
                         }
 
                         compsData.add({
                           'name': pName,
                           'base_qty': safeQty,
                           'qty': currentPieceStock,
+                          'is_table': false,
+                        });
+                      }
+                    }
+
+                    for (final p in tablePieces) {
+                      final pName = p.nameCtrl.text.trim();
+                      if (pName.isNotEmpty) {
+                        final pQty = int.tryParse(p.qtyCtrl.text.trim()) ?? 1;
+                        final safeQty = pQty > 0 ? pQty : 1;
+
+                        int currentPieceStock = 0;
+                        final match = rawComps.firstWhere(
+                          (c) => (c['name'] ?? '').toString().trim() == pName,
+                          orElse: () => null,
+                        );
+                        if (match != null && match['qty'] != null) {
+                          currentPieceStock = (match['qty'] is int)
+                              ? match['qty'] as int
+                              : (int.tryParse(match['qty'].toString()) ?? 0);
+                        }
+
+                        compsData.add({
+                          'name': pName,
+                          'base_qty': safeQty,
+                          'qty': currentPieceStock,
+                          'is_table': true,
                         });
                       }
                     }
@@ -726,7 +858,6 @@ class _CategoriesTabState extends State<CategoriesTab> {
                         whereArgs: [cat['id']],
                       );
 
-                      // تحديث الاسم في كافة الجداول المرتبطة (بما فيها الأرشيف والحركات وكشف المنجد)
                       if (newCatName != cat['name']) {
                         await txn.update('orders', {'category_name': newCatName},
                             where: 'category_id = ?', whereArgs: [cat['id']]);
@@ -761,6 +892,9 @@ class _CategoriesTabState extends State<CategoriesTab> {
     ).whenComplete(() {
       nameCtrl.dispose();
       for (final p in pieces) {
+        p.dispose();
+      }
+      for (final p in tablePieces) {
         p.dispose();
       }
     });
@@ -798,9 +932,12 @@ class _CategoriesTabState extends State<CategoriesTab> {
 
                 final int catId = (cat['id'] as int?) ?? i;
                 final bool isExpanded = _expandedCategoryIds.contains(catId);
-                final String summaryText = comps.isEmpty
+                final mainComps = CategoryStockHelper.getMainComponents(comps);
+                final tableComps = CategoryStockHelper.getTableComponents(comps);
+
+                final String summaryText = mainComps.isEmpty
                     ? 'لا توجد قطع مسجلة لهذا الطقم'
-                    : comps.map((c) {
+                    : mainComps.map((c) {
                         final pName = (c['name'] ?? '').toString();
                         final int bQ = (c['base_qty'] is int)
                             ? c['base_qty'] as int
@@ -896,7 +1033,7 @@ class _CategoriesTabState extends State<CategoriesTab> {
                                     ),
                                     const SizedBox(height: 3),
                                     Text(
-                                      'المكونات (${comps.length}): $summaryText',
+                                      'المكونات: $summaryText',
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
                                       style: TextStyle(
@@ -905,6 +1042,36 @@ class _CategoriesTabState extends State<CategoriesTab> {
                                         fontWeight: FontWeight.w500,
                                       ),
                                     ),
+                                    if (tableComps.isNotEmpty) ...[
+                                      const SizedBox(height: 3),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                        decoration: BoxDecoration(
+                                          color: const Color(0xFF0D9488).withValues(alpha: 0.12),
+                                          borderRadius: BorderRadius.circular(6),
+                                          border: Border.all(color: const Color(0xFF0D9488).withValues(alpha: 0.35)),
+                                        ),
+                                        child: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            const Icon(Icons.table_restaurant_rounded, size: 12, color: Color(0xFF0D9488)),
+                                            const SizedBox(width: 4),
+                                            Flexible(
+                                              child: Text(
+                                                'طقم ترابيزات: ${tableComps.map((c) => '${c['base_qty'] ?? 1} ${c['name']}').join(' • ')}',
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: const TextStyle(
+                                                  fontSize: 10.5,
+                                                  color: Color(0xFF0F766E),
+                                                  fontWeight: FontWeight.bold,
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ],
                                   ],
                                 ),
                               ),
@@ -926,18 +1093,18 @@ class _CategoriesTabState extends State<CategoriesTab> {
                             const SizedBox(height: 10),
 
                             const Text(
-                              'قطع ومكونات الطقم الواحد (التأسيسية):',
+                              'قطع ومكونات الطقم الأساسي (التأسيسية):',
                               style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12.5, color: AppTheme.primaryNavy),
                             ),
                             const SizedBox(height: 8),
 
-                            if (comps.isEmpty)
+                            if (mainComps.isEmpty)
                               const Text('لا توجد قطع مسجلة لهذا الطقم', style: TextStyle(color: Colors.grey, fontSize: 12))
                             else
                               Wrap(
                                 spacing: 8,
                                 runSpacing: 8,
-                                children: comps.map((c) {
+                                children: mainComps.map((c) {
                                   final pieceName = (c['name'] ?? '').toString();
                                   final int baseQ = (c['base_qty'] is int)
                                       ? c['base_qty'] as int
@@ -967,6 +1134,48 @@ class _CategoriesTabState extends State<CategoriesTab> {
                                   );
                                 }).toList(),
                               ),
+
+                            if (tableComps.isNotEmpty) ...[
+                              const SizedBox(height: 12),
+                              const Text(
+                                'قطع ومكونات طقم الترابيزات (التأسيسية):',
+                                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12.5, color: Color(0xFF0F766E)),
+                              ),
+                              const SizedBox(height: 8),
+                              Wrap(
+                                spacing: 8,
+                                runSpacing: 8,
+                                children: tableComps.map((c) {
+                                  final pieceName = (c['name'] ?? '').toString();
+                                  final int baseQ = (c['base_qty'] is int)
+                                      ? c['base_qty'] as int
+                                      : ((c['qty'] is int) ? c['qty'] as int : (int.tryParse(c['qty']?.toString() ?? '1') ?? 1));
+                                  return Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFF0FDFA),
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: Border.all(color: const Color(0xFF5EEAD4)),
+                                    ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        const Icon(Icons.table_restaurant_rounded, size: 14, color: Color(0xFF0D9488)),
+                                        const SizedBox(width: 6),
+                                        Text(
+                                          'عدد $baseQ $pieceName',
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 13,
+                                            color: Color(0xFF0F766E),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                }).toList(),
+                              ),
+                            ],
                             const SizedBox(height: 12),
 
                             Row(

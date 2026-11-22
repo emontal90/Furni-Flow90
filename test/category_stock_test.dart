@@ -84,6 +84,36 @@ void main() {
         'طقم فارغ (رصيد المعرض: 0 طقم)',
       );
     });
+
+    test('correctly isolates table components from main set calculations', () {
+      final cat = {
+        'id': 5,
+        'name': 'صالون مودرن مع ترابيزات',
+        'stock_qty': 2,
+        'components_json': jsonEncode([
+          {'name': 'كنبة 3 مقعد', 'base_qty': 1, 'qty': 2},
+          {'name': 'كنبة 2 مقعد', 'base_qty': 1, 'qty': 2},
+          {'name': 'فوتيه مفرد', 'base_qty': 2, 'qty': 5}, // 1 excess piece
+          // قطع الترابيزات
+          {'name': 'ترابيزة وسط كبيرة', 'base_qty': 1, 'qty': 3, 'is_table': true},
+          {'name': 'ترابيزة جانبية (بانكيت)', 'base_qty': 2, 'qty': 7, 'is_table': true}, // 3 complete table sets + 1 excess
+        ]),
+      };
+
+      // Main set breakdown
+      final mainBreakdown = CategoryStockHelper.calculateMainBreakdown(cat);
+      expect(mainBreakdown.completeSets, 2);
+      expect(mainBreakdown.individualPieces, 1);
+      expect(mainBreakdown.totalPieces, 9);
+
+      // Table set breakdown
+      final tableBreakdown = CategoryStockHelper.calculateTableBreakdown(cat);
+      expect(tableBreakdown.completeSets, 3);
+      expect(tableBreakdown.individualPieces, 1);
+      expect(tableBreakdown.totalPieces, 10);
+      expect(CategoryStockHelper.formatTableSummary(cat), '3 طقم و 1 فردي');
+      expect(CategoryStockHelper.hasTables(cat), true);
+    });
   });
 }
 

@@ -20,9 +20,14 @@ class _PieceEditItem {
   final String name;
   final int baseQty;
   final TextEditingController qtyCtrl;
+  final bool isTable;
 
-  _PieceEditItem({required this.name, required this.baseQty, required int qty})
-      : qtyCtrl = TextEditingController(text: qty.toString());
+  _PieceEditItem({
+    required this.name,
+    required this.baseQty,
+    required int qty,
+    this.isTable = false,
+  }) : qtyCtrl = TextEditingController(text: qty.toString());
 
   void dispose() {
     qtyCtrl.dispose();
@@ -37,6 +42,9 @@ class _ShowroomStockTabState extends State<ShowroomStockTab> {
   DateTime? _selectedHistoryDate;
   bool _isLoadingHistory = false;
   List<Map<String, dynamic>>? _historicalCategories;
+
+  // فلتر استعراض مخزون الترابيزات فقط
+  bool _filterTablesOnly = false;
 
   @override
   void initState() {
@@ -326,31 +334,181 @@ class _ShowroomStockTabState extends State<ShowroomStockTab> {
     );
   }
 
+  Widget _buildStockPieceRow({
+    required BuildContext ctx,
+    required _PieceEditItem piece,
+    required int liveSets,
+    required void Function(void Function()) setModalState,
+    required VoidCallback onQtyChanged,
+    bool isTable = false,
+  }) {
+    final int q = int.tryParse(piece.qtyCtrl.text.trim()) ?? 0;
+    final int excessOfPiece = math.max(0, q - (liveSets * piece.baseQty));
+    final themeColor = isTable ? const Color(0xFF0D9488) : AppTheme.primaryNavy;
+    final rowBg = isTable ? const Color(0xFFF0FDFA) : Colors.white;
+    final rowBorder = isTable
+        ? const Color(0xFF99F6E4)
+        : (excessOfPiece > 0 ? const Color(0xFFD97706).withValues(alpha: 0.5) : Colors.grey.shade300);
+    final iconData = isTable ? Icons.table_restaurant_rounded : Icons.chair_outlined;
+
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: rowBg,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: rowBorder),
+      ),
+      child: Row(
+        children: [
+          Icon(iconData, color: themeColor, size: 22),
+          const SizedBox(width: 8),
+          Expanded(
+            flex: 3,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  piece.name,
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 2),
+                Row(
+                  children: [
+                    Text(
+                      '${piece.baseQty} في الطقم',
+                      style: TextStyle(
+                        fontSize: 11.5,
+                        color: isTable ? const Color(0xFF0F766E) : Colors.grey.shade600,
+                      ),
+                    ),
+                    if (excessOfPiece > 0) ...[
+                      const SizedBox(width: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFEF3C7),
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(color: const Color(0xFFFDE68A)),
+                        ),
+                        child: Text(
+                          '+$excessOfPiece فردي زائد',
+                          style: const TextStyle(
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xFFB45309),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          Material(
+            color: Colors.red.shade50,
+            borderRadius: BorderRadius.circular(8),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(8),
+              onTap: () {
+                if (q > 0) {
+                  setModalState(() {
+                    piece.qtyCtrl.text = '${q - 1}';
+                    onQtyChanged();
+                  });
+                }
+              },
+              child: const Padding(
+                padding: EdgeInsets.all(8.0),
+                child: Icon(Icons.remove, color: Colors.red, size: 22),
+              ),
+            ),
+          ),
+          Container(
+            width: 58,
+            margin: const EdgeInsets.symmetric(horizontal: 4),
+            child: TextField(
+              controller: piece.qtyCtrl,
+              keyboardType: TextInputType.number,
+              textAlign: TextAlign.center,
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: themeColor),
+              decoration: InputDecoration(
+                isDense: true,
+                contentPadding: const EdgeInsets.symmetric(horizontal: 4, vertical: 10),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: BorderSide(color: themeColor, width: 1.5),
+                ),
+              ),
+              onChanged: (_) {
+                setModalState(() {
+                  onQtyChanged();
+                });
+              },
+            ),
+          ),
+          Material(
+            color: Colors.green.shade50,
+            borderRadius: BorderRadius.circular(8),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(8),
+              onTap: () {
+                setModalState(() {
+                  piece.qtyCtrl.text = '${q + 1}';
+                  onQtyChanged();
+                });
+              },
+              child: const Padding(
+                padding: EdgeInsets.all(8.0),
+                child: Icon(Icons.add, color: Colors.green, size: 22),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _openEditDialog(Map<String, dynamic> cat) {
     final parsedComps = CategoryStockHelper.parseComponents(cat['components_json']);
     final int initialSets = CategoryStockHelper.calculateCompleteSets(cat);
     final stockCtrl = TextEditingController(text: '$initialSets');
+
+    final int initialTableSets = CategoryStockHelper.calculateTableBreakdown(cat).completeSets;
+    final tableStockCtrl = TextEditingController(text: '$initialTableSets');
 
     // تحميل رصيد كل قطعة الفعلي الحالي بالمخزن بدون تصفير
     final List<_PieceEditItem> pieces = parsedComps.map((e) {
       final String name = (e['name'] ?? 'قطعة').toString().trim();
       final int baseQty = CategoryStockHelper.parseInt(e['base_qty'], fallback: 1);
       final int initialQty = CategoryStockHelper.parseInt(e['qty']);
+      final bool isTable = CategoryStockHelper.isTablePiece(e);
       return _PieceEditItem(
         name: name,
         baseQty: baseQty > 0 ? baseQty : 1,
         qty: initialQty,
+        isTable: isTable,
       );
     }).toList();
 
-    if (pieces.isEmpty) {
-      pieces.add(_PieceEditItem(name: 'كنبة كبيرة', baseQty: 1, qty: initialSets));
-      pieces.add(_PieceEditItem(name: 'فوتيه', baseQty: 2, qty: initialSets * 2));
+    List<_PieceEditItem> getMainPieces() => pieces.where((p) => !p.isTable).toList();
+    List<_PieceEditItem> getTablePieces() => pieces.where((p) => p.isTable).toList();
+
+    if (getMainPieces().isEmpty) {
+      pieces.add(_PieceEditItem(name: 'كنبة كبيرة', baseQty: 1, qty: initialSets, isTable: false));
+      pieces.add(_PieceEditItem(name: 'فوتيه', baseQty: 2, qty: initialSets * 2, isTable: false));
     }
 
     int calcCurrentSets() {
-      if (pieces.isEmpty) return 0;
-      return pieces.map((p) {
+      final m = getMainPieces();
+      if (m.isEmpty) return 0;
+      return m.map((p) {
         final q = int.tryParse(p.qtyCtrl.text.trim()) ?? 0;
         final b = p.baseQty > 0 ? p.baseQty : 1;
         return q ~/ b;
@@ -360,7 +518,29 @@ class _ShowroomStockTabState extends State<ShowroomStockTab> {
     int calcCurrentExcess() {
       final s = calcCurrentSets();
       int excess = 0;
-      for (final p in pieces) {
+      for (final p in getMainPieces()) {
+        final q = int.tryParse(p.qtyCtrl.text.trim()) ?? 0;
+        final b = p.baseQty > 0 ? p.baseQty : 1;
+        final ex = q - (s * b);
+        if (ex > 0) excess += ex;
+      }
+      return excess;
+    }
+
+    int calcCurrentTableSets() {
+      final t = getTablePieces();
+      if (t.isEmpty) return 0;
+      return t.map((p) {
+        final q = int.tryParse(p.qtyCtrl.text.trim()) ?? 0;
+        final b = p.baseQty > 0 ? p.baseQty : 1;
+        return q ~/ b;
+      }).reduce(math.min);
+    }
+
+    int calcCurrentTableExcess() {
+      final s = calcCurrentTableSets();
+      int excess = 0;
+      for (final p in getTablePieces()) {
         final q = int.tryParse(p.qtyCtrl.text.trim()) ?? 0;
         final b = p.baseQty > 0 ? p.baseQty : 1;
         final ex = q - (s * b);
@@ -371,7 +551,7 @@ class _ShowroomStockTabState extends State<ShowroomStockTab> {
 
     void modifySetsBy(int delta, StateSetter setModalState) {
       setModalState(() {
-        for (final p in pieces) {
+        for (final p in getMainPieces()) {
           int q = int.tryParse(p.qtyCtrl.text.trim()) ?? 0;
           final nextQ = math.max(0, q + (delta * p.baseQty));
           p.qtyCtrl.text = '$nextQ';
@@ -383,12 +563,35 @@ class _ShowroomStockTabState extends State<ShowroomStockTab> {
     void onDirectSetsTyped(int targetSets, StateSetter setModalState) {
       setModalState(() {
         final currentS = calcCurrentSets();
-        for (final p in pieces) {
+        for (final p in getMainPieces()) {
           int q = int.tryParse(p.qtyCtrl.text.trim()) ?? 0;
           int excess = math.max(0, q - (currentS * p.baseQty));
           p.qtyCtrl.text = '${(targetSets * p.baseQty) + excess}';
         }
         stockCtrl.text = '$targetSets';
+      });
+    }
+
+    void modifyTableSetsBy(int delta, StateSetter setModalState) {
+      setModalState(() {
+        for (final p in getTablePieces()) {
+          int q = int.tryParse(p.qtyCtrl.text.trim()) ?? 0;
+          final nextQ = math.max(0, q + (delta * p.baseQty));
+          p.qtyCtrl.text = '$nextQ';
+        }
+        tableStockCtrl.text = '${calcCurrentTableSets()}';
+      });
+    }
+
+    void onDirectTableSetsTyped(int targetSets, StateSetter setModalState) {
+      setModalState(() {
+        final currentS = calcCurrentTableSets();
+        for (final p in getTablePieces()) {
+          int q = int.tryParse(p.qtyCtrl.text.trim()) ?? 0;
+          int excess = math.max(0, q - (currentS * p.baseQty));
+          p.qtyCtrl.text = '${(targetSets * p.baseQty) + excess}';
+        }
+        tableStockCtrl.text = '$targetSets';
       });
     }
 
@@ -403,6 +606,11 @@ class _ShowroomStockTabState extends State<ShowroomStockTab> {
         builder: (ctx, setModalState) {
           final liveSets = calcCurrentSets();
           final liveExcess = calcCurrentExcess();
+          final mainPiecesList = getMainPieces();
+          final tablePiecesList = getTablePieces();
+          final bool hasTables = tablePiecesList.isNotEmpty;
+          final liveTableSets = calcCurrentTableSets();
+          final liveTableExcess = calcCurrentTableExcess();
 
           return Padding(
             padding: AppTheme.modalSheetPadding(ctx),
@@ -447,48 +655,7 @@ class _ShowroomStockTabState extends State<ShowroomStockTab> {
                   ),
                   const SizedBox(height: 12),
 
-                  // كارت الملخص اللحظي
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                    decoration: BoxDecoration(
-                      color: AppTheme.subtleBg(ctx),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: AppTheme.borderColor(ctx)),
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceAround,
-                      children: [
-                        Row(
-                          children: [
-                            const Icon(Icons.check_circle_rounded, color: Colors.green, size: 18),
-                            const SizedBox(width: 6),
-                            Text(
-                              'أطقم مكتملة: $liveSets طقم',
-                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.green),
-                            ),
-                          ],
-                        ),
-                        Container(width: 1, height: 24, color: AppTheme.borderColor(ctx)),
-                        Row(
-                          children: [
-                            Icon(Icons.inventory_2_outlined, color: liveExcess > 0 ? const Color(0xFFD97706) : AppTheme.textMuted(ctx), size: 18),
-                            const SizedBox(width: 6),
-                            Text(
-                              'قطع فردية زائدة: $liveExcess قطعة',
-                              style: TextStyle(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 13,
-                                color: liveExcess > 0 ? const Color(0xFFD97706) : AppTheme.textMuted(ctx),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 14),
-
-                  // 1. حقل إضافة/تعديل الأطقم الكاملة
+                  // =================== 1. قسم الأطقم الأساسية ===================
                   Container(
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
@@ -499,11 +666,37 @@ class _ShowroomStockTabState extends State<ShowroomStockTab> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text(
-                          'تعديل الأطقم الكاملة بالمخزن:',
-                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: AppTheme.primaryNavy),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Row(
+                              children: [
+                                Icon(Icons.weekend_rounded, color: AppTheme.primaryNavy, size: 20),
+                                SizedBox(width: 6),
+                                Text(
+                                  'الأطقم الأساسية (كنب وفوتيهات)',
+                                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: AppTheme.primaryNavy),
+                                ),
+                              ],
+                            ),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                              decoration: BoxDecoration(
+                                color: liveExcess > 0 ? const Color(0xFFFEF3C7) : Colors.green.shade50,
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Text(
+                                liveExcess > 0 ? '$liveSets طقم + $liveExcess فردي' : '$liveSets طقم مكتمل',
+                                style: TextStyle(
+                                  fontSize: 11.5,
+                                  fontWeight: FontWeight.bold,
+                                  color: liveExcess > 0 ? const Color(0xFFB45309) : Colors.green.shade800,
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
-                        const SizedBox(height: 8),
+                        const SizedBox(height: 10),
                         Row(
                           children: [
                             // زر إنقاص عدد الأطقم
@@ -566,145 +759,157 @@ class _ShowroomStockTabState extends State<ShowroomStockTab> {
                       ],
                     ),
                   ),
-                  const SizedBox(height: 16),
-                  const Divider(),
+                  const SizedBox(height: 10),
 
-                  // 2. سرد قطع هذا الطقم وتعديل رصيد كل قطعة
+                  // سرد قطع الأطقم الأساسية
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       const Text(
-                        'قطع الطقم بالمخزن (تعديل فردي لكل قطعة):',
+                        'قطع الطقم الأساسي (تعديل فردي لكل قطعة):',
                         style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: AppTheme.primaryNavy),
                       ),
                       Text(
-                        '${pieces.length} قطع مسجلة',
+                        '${mainPiecesList.length} قطع',
                         style: TextStyle(fontSize: 12, color: AppTheme.textMuted(ctx), fontWeight: FontWeight.bold),
                       ),
                     ],
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 6),
 
-                  ...pieces.map((piece) {
-                    final int q = int.tryParse(piece.qtyCtrl.text.trim()) ?? 0;
-                    final int excessOfPiece = math.max(0, q - (liveSets * piece.baseQty));
+                  ...mainPiecesList.map((piece) => _buildStockPieceRow(
+                        ctx: ctx,
+                        piece: piece,
+                        liveSets: liveSets,
+                        isTable: false,
+                        setModalState: setModalState,
+                        onQtyChanged: () {
+                          stockCtrl.text = '${calcCurrentSets()}';
+                        },
+                      )),
 
-                    return Container(
-                      margin: const EdgeInsets.symmetric(vertical: 4),
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                  // =================== 2. قسم طقم الترابيزات ===================
+                  if (hasTables) ...[
+                    const SizedBox(height: 18),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                       decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(
-                          color: excessOfPiece > 0 ? const Color(0xFFD97706).withValues(alpha: 0.5) : Colors.grey.shade300,
-                        ),
+                        color: const Color(0xFF0D9488).withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(8),
                       ),
                       child: Row(
                         children: [
-                          const Icon(Icons.chair_rounded, color: AppTheme.primaryNavy, size: 20),
-                          const SizedBox(width: 8),
-
-                          // اسم القطعة ونسبتها والرصيد الزائد
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  piece.name,
-                                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14.5),
-                                ),
-                                Row(
-                                  children: [
-                                    Text(
-                                      'النسبة: ${piece.baseQty} في الطقم',
-                                      style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
-                                    ),
-                                    if (excessOfPiece > 0) ...[
-                                      const SizedBox(width: 6),
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-                                        decoration: BoxDecoration(
-                                          color: const Color(0xFFD97706).withValues(alpha: 0.12),
-                                          borderRadius: BorderRadius.circular(6),
-                                        ),
-                                        child: Text(
-                                          '+$excessOfPiece فردي زائد',
-                                          style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: Color(0xFFB45309)),
-                                        ),
-                                      ),
-                                    ],
-                                  ],
-                                ),
-                              ],
+                          const Icon(Icons.table_restaurant_rounded, color: Color(0xFF0D9488), size: 18),
+                          const SizedBox(width: 6),
+                          const Text(
+                            'قسم طقم الترابيزات بالمخزن',
+                            style: TextStyle(
+                              fontSize: 13.5,
+                              fontWeight: FontWeight.bold,
+                              color: Color(0xFF0F766E),
                             ),
                           ),
-                          const SizedBox(width: 8),
-
-                          // زر إنقاص عدد القطعة
-                          Material(
-                            color: Colors.red.shade50,
-                            borderRadius: BorderRadius.circular(8),
-                            child: InkWell(
-                              borderRadius: BorderRadius.circular(8),
-                              onTap: () {
-                                if (q > 0) {
-                                  setModalState(() {
-                                    piece.qtyCtrl.text = '${q - 1}';
-                                    stockCtrl.text = '${calcCurrentSets()}';
-                                  });
-                                }
-                              },
-                              child: const Padding(
-                                padding: EdgeInsets.all(8.0),
-                                child: Icon(Icons.remove, color: Colors.red, size: 22),
-                              ),
-                            ),
-                          ),
-
-                          // حقل عدد القطع
-                          Container(
-                            width: 58,
-                            margin: const EdgeInsets.symmetric(horizontal: 4),
-                            child: TextField(
-                              controller: piece.qtyCtrl,
-                              keyboardType: TextInputType.number,
-                              textAlign: TextAlign.center,
-                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-                              decoration: InputDecoration(
-                                isDense: true,
-                                contentPadding: const EdgeInsets.symmetric(horizontal: 4, vertical: 10),
-                                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                              ),
-                              onChanged: (_) {
-                                setModalState(() {
-                                  stockCtrl.text = '${calcCurrentSets()}';
-                                });
-                              },
-                            ),
-                          ),
-
-                          // زر زيادة عدد القطعة
-                          Material(
-                            color: Colors.green.shade50,
-                            borderRadius: BorderRadius.circular(8),
-                            child: InkWell(
-                              borderRadius: BorderRadius.circular(8),
-                              onTap: () {
-                                setModalState(() {
-                                  piece.qtyCtrl.text = '${q + 1}';
-                                  stockCtrl.text = '${calcCurrentSets()}';
-                                });
-                              },
-                              child: const Padding(
-                                padding: EdgeInsets.all(8.0),
-                                child: Icon(Icons.add, color: Colors.green, size: 22),
-                              ),
+                          const Spacer(),
+                          Text(
+                            liveTableExcess > 0 ? '$liveTableSets طقم + $liveTableExcess فردي' : '$liveTableSets طقم مكتمل',
+                            style: const TextStyle(
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.bold,
+                              color: Color(0xFF0F766E),
                             ),
                           ),
                         ],
                       ),
-                    );
-                  }),
+                    ),
+                    const SizedBox(height: 8),
+
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF0D9488).withValues(alpha: 0.05),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: const Color(0xFF0D9488).withValues(alpha: 0.25)),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'تعديل أطقم الترابيزات الكاملة بالمخزن:',
+                            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13.5, color: Color(0xFF0F766E)),
+                          ),
+                          const SizedBox(height: 8),
+                          Row(
+                            children: [
+                              Material(
+                                color: Colors.red.shade50,
+                                borderRadius: BorderRadius.circular(10),
+                                child: InkWell(
+                                  borderRadius: BorderRadius.circular(10),
+                                  onTap: () {
+                                    if (liveTableSets > 0) {
+                                      modifyTableSetsBy(-1, setModalState);
+                                    }
+                                  },
+                                  child: const Padding(
+                                    padding: EdgeInsets.all(10.0),
+                                    child: Icon(Icons.remove, color: Colors.red, size: 26),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: TextField(
+                                  controller: tableStockCtrl,
+                                  keyboardType: TextInputType.number,
+                                  textAlign: TextAlign.center,
+                                  style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Color(0xFF0F766E)),
+                                  decoration: const InputDecoration(
+                                    labelText: 'عدد أطقم الترابيزات',
+                                    prefixIcon: Icon(Icons.table_restaurant_rounded, color: Color(0xFF0D9488)),
+                                  ),
+                                  onChanged: (val) {
+                                    final n = int.tryParse(val.trim());
+                                    if (n != null && n >= 0) {
+                                      onDirectTableSetsTyped(n, setModalState);
+                                    }
+                                  },
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Material(
+                                color: Colors.green.shade50,
+                                borderRadius: BorderRadius.circular(10),
+                                child: InkWell(
+                                  borderRadius: BorderRadius.circular(10),
+                                  onTap: () {
+                                    modifyTableSetsBy(1, setModalState);
+                                  },
+                                  child: const Padding(
+                                    padding: EdgeInsets.all(10.0),
+                                    child: Icon(Icons.add, color: Colors.green, size: 26),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+
+                    // سرد قطع الترابيزات
+                    ...tablePiecesList.map((piece) => _buildStockPieceRow(
+                          ctx: ctx,
+                          piece: piece,
+                          liveSets: liveTableSets,
+                          isTable: true,
+                          setModalState: setModalState,
+                          onQtyChanged: () {
+                            tableStockCtrl.text = '${calcCurrentTableSets()}';
+                          },
+                        )),
+                  ],
+
                   const SizedBox(height: 20),
 
                   // زر حفظ التعديلات في المخزن
@@ -724,13 +929,15 @@ class _ShowroomStockTabState extends State<ShowroomStockTab> {
                             'name': pName,
                             'base_qty': p.baseQty,
                             'qty': pQty >= 0 ? pQty : 0,
+                            if (p.isTable) 'is_table': true,
                           });
                         }
                       }
 
-                      final int calculatedSets = validComps.isEmpty
+                      final mainComps = validComps.where((p) => p['is_table'] != true).toList();
+                      final int calculatedSets = mainComps.isEmpty
                           ? (int.tryParse(stockCtrl.text.trim()) ?? 0)
-                          : validComps.map<int>((p) {
+                          : mainComps.map<int>((p) {
                               final q = (p['qty'] as int?) ?? 0;
                               final b = (p['base_qty'] as int?) ?? 1;
                               return q ~/ (b > 0 ? b : 1);
@@ -764,7 +971,7 @@ class _ShowroomStockTabState extends State<ShowroomStockTab> {
                         );
                       }
 
-                      // 2. تدوين حركات التعديل في قطع الطقم
+                      // 2. تدوين حركات التعديل في قطع الطقم والترابيزات
                       List oldComps = [];
                       try {
                         oldComps = jsonDecode(cat['components_json']);
@@ -773,6 +980,7 @@ class _ShowroomStockTabState extends State<ShowroomStockTab> {
                       for (final p in validComps) {
                         final pName = p['name'] as String;
                         final pQty = p['qty'] as int;
+                        final isTab = p['is_table'] == true;
 
                         final matchingOld = oldComps.firstWhere(
                           (oc) => (oc['name'] ?? '').toString().trim() == pName.trim(),
@@ -793,8 +1001,8 @@ class _ShowroomStockTabState extends State<ShowroomStockTab> {
                                 {'name': pName, 'delta': pieceDiff},
                               ],
                               notes: pieceDiff > 0
-                                  ? 'تعديل رصيد قطعة ($pName) بمقدار (+$pieceDiff قطعة) - أصبحت $pQty بدلاً من $oldQty'
-                                  : 'تعديل رصيد قطعة ($pName) بمقدار ($pieceDiff قطعة) - أصبحت $pQty بدلاً من $oldQty',
+                                  ? 'تعديل رصيد قطعة ${isTab ? "(ترابيزة) " : ""}($pName) بمقدار (+$pieceDiff قطعة) - أصبحت $pQty بدلاً من $oldQty'
+                                  : 'تعديل رصيد قطعة ${isTab ? "(ترابيزة) " : ""}($pName) بمقدار ($pieceDiff قطعة) - أصبحت $pQty بدلاً من $oldQty',
                             );
                           }
                         }
@@ -1180,6 +1388,92 @@ class _ShowroomStockTabState extends State<ShowroomStockTab> {
             ),
           ),
 
+        // شريط التبديل بين الأطقم الأساسية والترابيزات
+        Container(
+          margin: const EdgeInsets.fromLTRB(12, 6, 12, 4),
+          padding: const EdgeInsets.all(4),
+          decoration: BoxDecoration(
+            color: AppTheme.subtleBg(context),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: AppTheme.borderColor(context)),
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: InkWell(
+                  onTap: () {
+                    if (_filterTablesOnly) setState(() => _filterTablesOnly = false);
+                  },
+                  borderRadius: BorderRadius.circular(9),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 200),
+                    padding: const EdgeInsets.symmetric(vertical: 7),
+                    decoration: BoxDecoration(
+                      color: !_filterTablesOnly ? AppTheme.primaryNavy : Colors.transparent,
+                      borderRadius: BorderRadius.circular(9),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          Icons.weekend_rounded,
+                          size: 16,
+                          color: !_filterTablesOnly ? AppTheme.royalGold : AppTheme.textMuted(context),
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          'الأطقم الأساسية',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 13,
+                            color: !_filterTablesOnly ? Colors.white : AppTheme.textMuted(context),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 4),
+              Expanded(
+                child: InkWell(
+                  onTap: () {
+                    if (!_filterTablesOnly) setState(() => _filterTablesOnly = true);
+                  },
+                  borderRadius: BorderRadius.circular(9),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 200),
+                    padding: const EdgeInsets.symmetric(vertical: 7),
+                    decoration: BoxDecoration(
+                      color: _filterTablesOnly ? const Color(0xFF0D9488) : Colors.transparent,
+                      borderRadius: BorderRadius.circular(9),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          Icons.table_restaurant_rounded,
+                          size: 16,
+                          color: _filterTablesOnly ? Colors.white : AppTheme.textMuted(context),
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          'الترابيزات',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 13,
+                            color: _filterTablesOnly ? Colors.white : AppTheme.textMuted(context),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+
         // قائمة الأصناف
         Expanded(
           child: RefreshIndicator(
@@ -1201,297 +1495,515 @@ class _ShowroomStockTabState extends State<ShowroomStockTab> {
                     itemCount: effectiveCategories.length,
                     itemBuilder: (ctx, i) {
                       final cat = effectiveCategories[i];
-              List comps = [];
-              try {
-                comps = jsonDecode(cat['components_json']);
-              } catch (_) {}
+                      final bool catHasTables = CategoryStockHelper.hasTables(cat);
 
-              final breakdown = CategoryStockHelper.calculateCategoryBreakdown(cat);
-              final int completeSets = breakdown.completeSets;
-              final int individualPiecesCount = breakdown.individualPieces;
-              final List<Map<String, dynamic>> excessPieces = breakdown.excessPieces;
+                      // في وضع فلتر الترابيزات نحسب مخزون الترابيزات فقط
+                      final breakdown = _filterTablesOnly
+                          ? CategoryStockHelper.calculateTableBreakdown(cat)
+                          : CategoryStockHelper.calculateMainBreakdown(cat);
 
-              final int qty = completeSets;
-              final int catId = (cat['id'] as int?) ?? i;
-              final bool isExpanded = _expandedCategoryIds.contains(catId);
-              final int totalStockPieces = comps.fold<int>(
-                0,
-                (sum, c) => sum + ((c['qty'] is int) ? c['qty'] as int : (int.tryParse(c['qty']?.toString() ?? '0') ?? 0)),
-              );
+                      final int completeSets = breakdown.completeSets;
+                      final int individualPiecesCount = breakdown.individualPieces;
+                      final List<Map<String, dynamic>> excessPieces = breakdown.excessPieces;
 
-              return Card(
-                elevation: isExpanded ? 3 : 1.5,
-                margin: const EdgeInsets.symmetric(vertical: 5),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
-                  side: BorderSide(
-                    color: isExpanded
-                        ? AppTheme.royalGold
-                        : (qty > 0 ? AppTheme.royalGold.withValues(alpha: 0.4) : Colors.grey.shade300),
-                    width: isExpanded ? 1.5 : 1.2,
-                  ),
-                ),
-                clipBehavior: Clip.antiAlias,
-                child: InkWell(
-                  onTap: () {
-                    setState(() {
-                      if (isExpanded) {
-                        _expandedCategoryIds.remove(catId);
-                      } else {
-                        _expandedCategoryIds.add(catId);
-                      }
-                    });
-                  },
-                  borderRadius: BorderRadius.circular(16),
-                  child: Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 12, vertical: isExpanded ? 12 : 10),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        // الصف الأول (ملخص مضغوط): بادج الأطقم + بادج الفردي + اسم الصنف + سهم التوسيع
-                        Row(
-                          children: [
-                            // 1. بادج رصيد الأطقم الكاملة
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
-                              decoration: BoxDecoration(
-                                gradient: LinearGradient(
-                                  colors: AppTheme.setsAvatarGradient(context, hasValue: completeSets > 0),
-                                ),
-                                borderRadius: BorderRadius.circular(10),
-                                border: AppTheme.isDark(context)
-                                    ? Border.all(color: AppTheme.brightGold.withValues(alpha: 0.35))
-                                    : null,
-                              ),
-                              child: Column(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  const Text(
-                                    'الأطقم',
-                                    style: TextStyle(fontSize: 9.5, color: AppTheme.brightGold, fontWeight: FontWeight.bold),
-                                  ),
-                                  Text(
-                                    '$completeSets',
-                                    style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: Colors.white),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            const SizedBox(width: 6),
+                      final int catId = (cat['id'] as int?) ?? i;
+                      final bool isExpanded = _expandedCategoryIds.contains(catId);
 
-                            // 2. بادج الرصيد الفردي (اضغط لعرض تفاصيل القطع الفردية)
-                            Material(
-                              color: Colors.transparent,
-                              child: InkWell(
-                                borderRadius: BorderRadius.circular(10),
-                                onTap: () {
-                                  _showIndividualPiecesDialog(
-                                    context: context,
-                                    setName: (cat['name'] ?? '').toString(),
-                                    completeSets: completeSets,
-                                    totalExcess: individualPiecesCount,
-                                    excessPieces: excessPieces,
-                                  );
-                                },
-                                child: Tooltip(
-                                  message: 'اضغط لعرض تفاصيل القطع الفردية الزائدة',
-                                  child: Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
-                                    decoration: BoxDecoration(
-                                      gradient: LinearGradient(
-                                        colors: AppTheme.individualAvatarGradient(context, hasValue: individualPiecesCount > 0),
-                                      ),
-                                      borderRadius: BorderRadius.circular(10),
-                                    ),
-                                    child: Column(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        const Text(
-                                          'فردي',
-                                          style: TextStyle(fontSize: 9.5, color: Colors.white, fontWeight: FontWeight.bold),
+                      final List mainComps = CategoryStockHelper.getMainComponents(cat['components_json']);
+                      final List tableComps = CategoryStockHelper.getTableComponents(cat['components_json']);
+
+                      final int displayPiecesCount = _filterTablesOnly
+                          ? tableComps.fold<int>(0, (s, c) => s + CategoryStockHelper.parseInt(c['qty']))
+                          : mainComps.fold<int>(0, (s, c) => s + CategoryStockHelper.parseInt(c['qty']));
+
+                      return Card(
+                        elevation: isExpanded ? 3 : 1.5,
+                        margin: const EdgeInsets.symmetric(vertical: 5),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                          side: BorderSide(
+                            color: isExpanded
+                                ? (_filterTablesOnly ? const Color(0xFF0D9488) : AppTheme.royalGold)
+                                : (_filterTablesOnly
+                                    ? (completeSets > 0 ? const Color(0xFF0D9488).withValues(alpha: 0.5) : Colors.grey.shade300)
+                                    : (completeSets > 0 ? AppTheme.royalGold.withValues(alpha: 0.4) : Colors.grey.shade300)),
+                            width: isExpanded ? 1.5 : 1.2,
+                          ),
+                        ),
+                        clipBehavior: Clip.antiAlias,
+                        child: InkWell(
+                          onTap: () {
+                            setState(() {
+                              if (isExpanded) {
+                                _expandedCategoryIds.remove(catId);
+                              } else {
+                                _expandedCategoryIds.add(catId);
+                              }
+                            });
+                          },
+                          borderRadius: BorderRadius.circular(16),
+                          child: Padding(
+                            padding: EdgeInsets.symmetric(horizontal: 12, vertical: isExpanded ? 12 : 10),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                // الصف الأول: بادج الأطقم + بادج الفردي + اسم الصنف + ملخص
+                                Row(
+                                  children: [
+                                    // 1. بادج رصيد الأطقم (أو الترابيزات)
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+                                      decoration: BoxDecoration(
+                                        gradient: LinearGradient(
+                                          colors: _filterTablesOnly
+                                              ? (completeSets > 0
+                                                  ? const [Color(0xFF0F766E), Color(0xFF0D9488)]
+                                                  : const [Color(0xFF64748B), Color(0xFF475569)])
+                                              : AppTheme.setsAvatarGradient(context, hasValue: completeSets > 0),
                                         ),
-                                        Text(
-                                          '$individualPiecesCount',
-                                          style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: Colors.white),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 10),
-
-                            // اسم الصنف كاملاً بدون قص + حالة التوفر في سطر واحد محكم
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  FittedBox(
-                                    fit: BoxFit.scaleDown,
-                                    alignment: AlignmentDirectional.centerStart,
-                                    child: Text(
-                                      (cat['name'] ?? '').toString(),
-                                      maxLines: 1,
-                                      style: TextStyle(
-                                        fontSize: 16,
-                                        fontWeight: FontWeight.bold,
-                                        color: AppTheme.textPrimary(context),
+                                        borderRadius: BorderRadius.circular(10),
+                                        border: AppTheme.isDark(context)
+                                            ? Border.all(color: (_filterTablesOnly ? const Color(0xFF2DD4BF) : AppTheme.brightGold).withValues(alpha: 0.35))
+                                            : null,
                                       ),
-                                    ),
-                                  ),
-                                  const SizedBox(height: 4),
-                                  FittedBox(
-                                    fit: BoxFit.scaleDown,
-                                    alignment: AlignmentDirectional.centerStart,
-                                    child: Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        Container(
-                                          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                                          decoration: BoxDecoration(
-                                            color: completeSets > 0
-                                                ? AppTheme.successBg(context)
-                                                : (individualPiecesCount > 0 ? AppTheme.warningBg(context) : AppTheme.dangerBg(context)),
-                                            borderRadius: BorderRadius.circular(6),
-                                            border: Border.all(
-                                              color: completeSets > 0
-                                                  ? AppTheme.successBorder(context)
-                                                  : (individualPiecesCount > 0 ? AppTheme.warningBorder(context) : AppTheme.dangerBorder(context)),
+                                      child: Column(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Text(
+                                            _filterTablesOnly ? 'الترابيزات' : 'الأطقم',
+                                            style: TextStyle(
+                                              fontSize: 9.5,
+                                              color: _filterTablesOnly ? const Color(0xFF99F6E4) : AppTheme.brightGold,
+                                              fontWeight: FontWeight.bold,
                                             ),
+                                          ),
+                                          Text(
+                                            '$completeSets',
+                                            style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: Colors.white),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    const SizedBox(width: 6),
+
+                                    // 2. بادج الرصيد الفردي
+                                    Material(
+                                      color: Colors.transparent,
+                                      child: InkWell(
+                                        borderRadius: BorderRadius.circular(10),
+                                        onTap: () {
+                                          _showIndividualPiecesDialog(
+                                            context: context,
+                                            setName: _filterTablesOnly ? '${cat['name']} (ترابيزات)' : (cat['name'] ?? '').toString(),
+                                            completeSets: completeSets,
+                                            totalExcess: individualPiecesCount,
+                                            excessPieces: excessPieces,
+                                          );
+                                        },
+                                        child: Tooltip(
+                                          message: 'اضغط لعرض تفاصيل القطع الفردية الزائدة',
+                                          child: Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+                                            decoration: BoxDecoration(
+                                              gradient: LinearGradient(
+                                                colors: AppTheme.individualAvatarGradient(context, hasValue: individualPiecesCount > 0),
+                                              ),
+                                              borderRadius: BorderRadius.circular(10),
+                                            ),
+                                            child: Column(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                const Text(
+                                                  'فردي',
+                                                  style: TextStyle(fontSize: 9.5, color: Colors.white, fontWeight: FontWeight.bold),
+                                                ),
+                                                Text(
+                                                  '$individualPiecesCount',
+                                                  style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: Colors.white),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 10),
+
+                                    // اسم الصنف كاملاً مع شارات التوفر والترابيزات
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          FittedBox(
+                                            fit: BoxFit.scaleDown,
+                                            alignment: AlignmentDirectional.centerStart,
+                                            child: Text(
+                                              (cat['name'] ?? '').toString(),
+                                              maxLines: 1,
+                                              style: TextStyle(
+                                                fontSize: 16,
+                                                fontWeight: FontWeight.bold,
+                                                color: AppTheme.textPrimary(context),
+                                              ),
+                                            ),
+                                          ),
+                                          const SizedBox(height: 4),
+                                          FittedBox(
+                                            fit: BoxFit.scaleDown,
+                                            alignment: AlignmentDirectional.centerStart,
+                                            child: Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                if (_filterTablesOnly && !catHasTables)
+                                                  Container(
+                                                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                                                    decoration: BoxDecoration(
+                                                      color: AppTheme.subtleBg(context),
+                                                      borderRadius: BorderRadius.circular(6),
+                                                      border: Border.all(color: AppTheme.borderColor(context)),
+                                                    ),
+                                                    child: Text(
+                                                      'لا توجد ترابيزات مسجلة',
+                                                      style: TextStyle(
+                                                        fontSize: 11,
+                                                        color: AppTheme.textMuted(context),
+                                                        fontWeight: FontWeight.bold,
+                                                      ),
+                                                    ),
+                                                  )
+                                                else
+                                                  Container(
+                                                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                                                    decoration: BoxDecoration(
+                                                      color: completeSets > 0
+                                                          ? AppTheme.successBg(context)
+                                                          : (individualPiecesCount > 0 ? AppTheme.warningBg(context) : AppTheme.dangerBg(context)),
+                                                      borderRadius: BorderRadius.circular(6),
+                                                      border: Border.all(
+                                                        color: completeSets > 0
+                                                            ? AppTheme.successBorder(context)
+                                                            : (individualPiecesCount > 0 ? AppTheme.warningBorder(context) : AppTheme.dangerBorder(context)),
+                                                      ),
+                                                    ),
+                                                    child: Text(
+                                                      completeSets > 0
+                                                          ? 'جاهز: $completeSets ${_filterTablesOnly ? "طقم ترابيزة" : "طقم"}${individualPiecesCount > 0 ? " + $individualPiecesCount فردي" : ""}'
+                                                          : (individualPiecesCount > 0 ? '$individualPiecesCount قطع فردية' : 'رصيد صفر'),
+                                                      maxLines: 1,
+                                                      style: TextStyle(
+                                                        fontSize: 11,
+                                                        fontWeight: FontWeight.bold,
+                                                        color: completeSets > 0
+                                                            ? AppTheme.successFg(context)
+                                                            : (individualPiecesCount > 0 ? AppTheme.warningFg(context) : AppTheme.dangerFg(context)),
+                                                      ),
+                                                    ),
+                                                  ),
+                                                const SizedBox(width: 6),
+                                                Text(
+                                                  '($displayPiecesCount قطعة)',
+                                                  maxLines: 1,
+                                                  style: TextStyle(
+                                                    fontSize: 11.5,
+                                                    fontWeight: FontWeight.bold,
+                                                    color: AppTheme.textMuted(context),
+                                                  ),
+                                                ),
+                                                // بادج مختصر للترابيزات في العرض العادي
+                                                if (!_filterTablesOnly && catHasTables) ...[
+                                                  const SizedBox(width: 6),
+                                                  Container(
+                                                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                                                    decoration: BoxDecoration(
+                                                      color: const Color(0xFF0D9488).withValues(alpha: 0.1),
+                                                      borderRadius: BorderRadius.circular(6),
+                                                      border: Border.all(color: const Color(0xFF0D9488).withValues(alpha: 0.3)),
+                                                    ),
+                                                    child: Row(
+                                                      mainAxisSize: MainAxisSize.min,
+                                                      children: [
+                                                        const Icon(Icons.table_restaurant_rounded, size: 12, color: Color(0xFF0D9488)),
+                                                        const SizedBox(width: 4),
+                                                        Text(
+                                                          'ترابيزات: ${CategoryStockHelper.formatTableSummary(cat)}',
+                                                          style: const TextStyle(
+                                                            fontSize: 10.5,
+                                                            fontWeight: FontWeight.bold,
+                                                            color: Color(0xFF0D9488),
+                                                          ),
+                                                        ),
+                                                      ],
+                                                    ),
+                                                  ),
+                                                ],
+                                              ],
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+
+                                    const SizedBox(width: 4),
+                                    Icon(
+                                      isExpanded
+                                          ? Icons.keyboard_arrow_up_rounded
+                                          : Icons.keyboard_arrow_down_rounded,
+                                      color: AppTheme.textMuted(context),
+                                      size: 24,
+                                    ),
+                                  ],
+                                ),
+
+                                // التفاصيل الكاملة وأزرار التعديل تظهر عند التوسيع فقط
+                                if (isExpanded) ...[
+                                  const SizedBox(height: 10),
+                                  const Divider(height: 1),
+                                  const SizedBox(height: 10),
+
+                                  if (_filterTablesOnly) ...[
+                                    // عرض قطع الترابيزات فقط
+                                    Row(
+                                      children: [
+                                        const Icon(Icons.table_restaurant_rounded, size: 16, color: Color(0xFF0D9488)),
+                                        const SizedBox(width: 6),
+                                        const Expanded(
+                                          child: Text(
+                                            'قطع طقم الترابيزات ورصيدها بالمخزن:',
+                                            style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: Color(0xFF0F766E)),
+                                          ),
+                                        ),
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                          decoration: BoxDecoration(
+                                            color: const Color(0xFF0D9488).withValues(alpha: 0.1),
+                                            borderRadius: BorderRadius.circular(6),
                                           ),
                                           child: Text(
-                                            completeSets > 0
-                                                ? 'جاهز: $completeSets طقم${individualPiecesCount > 0 ? " + $individualPiecesCount فردي" : ""}'
-                                                : (individualPiecesCount > 0 ? '$individualPiecesCount قطع فردية' : 'رصيد صفر'),
-                                            maxLines: 1,
-                                            style: TextStyle(
-                                              fontSize: 11,
-                                              fontWeight: FontWeight.bold,
-                                              color: completeSets > 0
-                                                  ? AppTheme.successFg(context)
-                                                  : (individualPiecesCount > 0 ? AppTheme.warningFg(context) : AppTheme.dangerFg(context)),
-                                            ),
-                                          ),
-                                        ),
-                                        const SizedBox(width: 6),
-                                        Text(
-                                          '($totalStockPieces قطعة)',
-                                          maxLines: 1,
-                                          style: TextStyle(
-                                            fontSize: 11.5,
-                                            fontWeight: FontWeight.bold,
-                                            color: AppTheme.textMuted(context),
+                                            'إجمالي الترابيزات: $displayPiecesCount قطعة',
+                                            style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: Color(0xFF0D9488)),
                                           ),
                                         ),
                                       ],
                                     ),
-                                  ),
-                                ],
-                              ),
-                            ),
+                                    const SizedBox(height: 8),
 
-                            const SizedBox(width: 4),
-                            Icon(
-                              isExpanded
-                                  ? Icons.keyboard_arrow_up_rounded
-                                  : Icons.keyboard_arrow_down_rounded,
-                              color: AppTheme.textMuted(context),
-                              size: 24,
-                            ),
-                          ],
-                        ),
+                                    if (tableComps.isEmpty)
+                                      const Text('لا توجد ترابيزات مضافة لهذا الصنف', style: TextStyle(color: Colors.grey, fontSize: 12))
+                                    else
+                                      Wrap(
+                                        spacing: 8,
+                                        runSpacing: 8,
+                                        children: tableComps.map((c) {
+                                          final String pieceName = (c['name'] ?? '').toString();
+                                          final int pieceCount = CategoryStockHelper.parseInt(c['qty']);
 
-                        // التفاصيل الكاملة وأزرار التعديل تظهر عند التوسيع فقط
-                        if (isExpanded) ...[
-                          const SizedBox(height: 10),
-                          const Divider(height: 1),
-                          const SizedBox(height: 10),
-
-                          Row(
-                            children: [
-                              Expanded(
-                                child: Text(
-                                  'قطع الطقم ورصيدها الفعلي بالمخزن:',
-                                  style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: AppTheme.textPrimary(context)),
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                                decoration: BoxDecoration(
-                                  color: Colors.brown.withValues(alpha: 0.08),
-                                  borderRadius: BorderRadius.circular(6),
-                                ),
-                                child: Text(
-                                  'إجمالي القطع: $totalStockPieces قطعة',
-                                  style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: Colors.brown),
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 8),
-
-                          if (comps.isEmpty)
-                            const Text('لم يتم سرد قطع بعد لهذا الطقم', style: TextStyle(color: Colors.grey, fontSize: 12))
-                          else
-                            Wrap(
-                              spacing: 8,
-                              runSpacing: 8,
-                              children: comps.map((c) {
-                                final String pieceName = (c['name'] ?? '').toString();
-                                final int pieceCount = (c['qty'] is int)
-                                    ? c['qty'] as int
-                                    : (int.tryParse(c['qty']?.toString() ?? '0') ?? 0);
-
-                                return Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                                  decoration: BoxDecoration(
-                                    color: pieceCount > 0 ? AppTheme.infoBg(context) : AppTheme.subtleBg(context),
-                                    borderRadius: BorderRadius.circular(10),
-                                    border: Border.all(
-                                      color: pieceCount > 0 ? AppTheme.infoBorder(context) : AppTheme.borderColor(context),
-                                    ),
-                                  ),
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Icon(
-                                        Icons.chair_rounded,
-                                        size: 15,
-                                        color: pieceCount > 0 ? AppTheme.infoFg(context) : AppTheme.textMuted(context),
+                                          return Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                            decoration: BoxDecoration(
+                                              color: pieceCount > 0 ? const Color(0xFFF0FDFA) : AppTheme.subtleBg(context),
+                                              borderRadius: BorderRadius.circular(10),
+                                              border: Border.all(
+                                                color: pieceCount > 0 ? const Color(0xFF5EEAD4) : AppTheme.borderColor(context),
+                                              ),
+                                            ),
+                                            child: Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                Icon(
+                                                  Icons.table_restaurant_rounded,
+                                                  size: 15,
+                                                  color: pieceCount > 0 ? const Color(0xFF0D9488) : AppTheme.textMuted(context),
+                                                ),
+                                                const SizedBox(width: 6),
+                                                Text(
+                                                  pieceName,
+                                                  style: TextStyle(
+                                                    fontWeight: FontWeight.bold,
+                                                    fontSize: 13,
+                                                    color: pieceCount > 0 ? const Color(0xFF0F766E) : AppTheme.textMuted(context),
+                                                  ),
+                                                ),
+                                                const SizedBox(width: 8),
+                                                Container(
+                                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                                  decoration: BoxDecoration(
+                                                    color: pieceCount > 0 ? const Color(0xFF0D9488) : Colors.grey.shade400,
+                                                    borderRadius: BorderRadius.circular(6),
+                                                  ),
+                                                  child: Text(
+                                                    '$pieceCount',
+                                                    style: const TextStyle(
+                                                      color: Colors.white,
+                                                      fontSize: 12,
+                                                      fontWeight: FontWeight.bold,
+                                                    ),
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          );
+                                        }).toList(),
                                       ),
-                                      const SizedBox(width: 6),
-                                      Text(
-                                        pieceName,
-                                        style: TextStyle(
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 13,
-                                          color: pieceCount > 0 ? AppTheme.infoFg(context) : AppTheme.textMuted(context),
-                                        ),
-                                      ),
-                                      const SizedBox(width: 8),
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                        decoration: BoxDecoration(
-                                          color: pieceCount > 0 ? AppTheme.primaryNavy : Colors.grey.shade400,
-                                          borderRadius: BorderRadius.circular(6),
-                                        ),
-                                        child: Text(
-                                          '$pieceCount',
-                                          style: const TextStyle(
-                                            color: Colors.white,
-                                            fontSize: 12,
-                                            fontWeight: FontWeight.bold,
+                                  ] else ...[
+                                    // عرض قطع الأطقم الأساسية
+                                    Row(
+                                      children: [
+                                        Expanded(
+                                          child: Text(
+                                            'قطع الطقم ورصيدها الفعلي بالمخزن:',
+                                            style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: AppTheme.textPrimary(context)),
                                           ),
                                         ),
+                                        const SizedBox(width: 8),
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                          decoration: BoxDecoration(
+                                            color: Colors.brown.withValues(alpha: 0.08),
+                                            borderRadius: BorderRadius.circular(6),
+                                          ),
+                                          child: Text(
+                                            'إجمالي القطع: $displayPiecesCount قطعة',
+                                            style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: Colors.brown),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 8),
+
+                                    if (mainComps.isEmpty)
+                                      const Text('لم يتم سرد قطع بعد لهذا الطقم', style: TextStyle(color: Colors.grey, fontSize: 12))
+                                    else
+                                      Wrap(
+                                        spacing: 8,
+                                        runSpacing: 8,
+                                        children: mainComps.map((c) {
+                                          final String pieceName = (c['name'] ?? '').toString();
+                                          final int pieceCount = CategoryStockHelper.parseInt(c['qty']);
+
+                                          return Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                            decoration: BoxDecoration(
+                                              color: pieceCount > 0 ? AppTheme.infoBg(context) : AppTheme.subtleBg(context),
+                                              borderRadius: BorderRadius.circular(10),
+                                              border: Border.all(
+                                                color: pieceCount > 0 ? AppTheme.infoBorder(context) : AppTheme.borderColor(context),
+                                              ),
+                                            ),
+                                            child: Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                Icon(
+                                                  Icons.chair_rounded,
+                                                  size: 15,
+                                                  color: pieceCount > 0 ? AppTheme.infoFg(context) : AppTheme.textMuted(context),
+                                                ),
+                                                const SizedBox(width: 6),
+                                                Text(
+                                                  pieceName,
+                                                  style: TextStyle(
+                                                    fontWeight: FontWeight.bold,
+                                                    fontSize: 13,
+                                                    color: pieceCount > 0 ? AppTheme.infoFg(context) : AppTheme.textMuted(context),
+                                                  ),
+                                                ),
+                                                const SizedBox(width: 8),
+                                                Container(
+                                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                                  decoration: BoxDecoration(
+                                                    color: pieceCount > 0 ? AppTheme.primaryNavy : Colors.grey.shade400,
+                                                    borderRadius: BorderRadius.circular(6),
+                                                  ),
+                                                  child: Text(
+                                                    '$pieceCount',
+                                                    style: const TextStyle(
+                                                      color: Colors.white,
+                                                      fontSize: 12,
+                                                      fontWeight: FontWeight.bold,
+                                                    ),
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          );
+                                        }).toList(),
+                                      ),
+
+                                    // سرد قطع الترابيزات أيضاً إن وجدت
+                                    if (catHasTables) ...[
+                                      const SizedBox(height: 12),
+                                      Row(
+                                        children: [
+                                          const Icon(Icons.table_restaurant_rounded, size: 15, color: Color(0xFF0D9488)),
+                                          const SizedBox(width: 6),
+                                          const Text(
+                                            'طقم الترابيزات التابع للصنف:',
+                                            style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF0F766E)),
+                                          ),
+                                          const Spacer(),
+                                          Text(
+                                            '(${CategoryStockHelper.formatTableSummary(cat)})',
+                                            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF0D9488)),
+                                          ),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 6),
+                                      Wrap(
+                                        spacing: 8,
+                                        runSpacing: 8,
+                                        children: tableComps.map((c) {
+                                          final String pieceName = (c['name'] ?? '').toString();
+                                          final int pieceCount = CategoryStockHelper.parseInt(c['qty']);
+
+                                          return Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                            decoration: BoxDecoration(
+                                              color: pieceCount > 0 ? const Color(0xFFF0FDFA) : AppTheme.subtleBg(context),
+                                              borderRadius: BorderRadius.circular(10),
+                                              border: Border.all(
+                                                color: pieceCount > 0 ? const Color(0xFF5EEAD4) : AppTheme.borderColor(context),
+                                              ),
+                                            ),
+                                            child: Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                Icon(
+                                                  Icons.table_restaurant_rounded,
+                                                  size: 14,
+                                                  color: pieceCount > 0 ? const Color(0xFF0D9488) : AppTheme.textMuted(context),
+                                                ),
+                                                const SizedBox(width: 6),
+                                                Text(
+                                                  pieceName,
+                                                  style: TextStyle(
+                                                    fontWeight: FontWeight.bold,
+                                                    fontSize: 12.5,
+                                                    color: pieceCount > 0 ? const Color(0xFF0F766E) : AppTheme.textMuted(context),
+                                                  ),
+                                                ),
+                                                const SizedBox(width: 8),
+                                                Container(
+                                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                                  decoration: BoxDecoration(
+                                                    color: pieceCount > 0 ? const Color(0xFF0D9488) : Colors.grey.shade400,
+                                                    borderRadius: BorderRadius.circular(6),
+                                                  ),
+                                                  child: Text(
+                                                    '$pieceCount',
+                                                    style: const TextStyle(
+                                                      color: Colors.white,
+                                                      fontSize: 11.5,
+                                                      fontWeight: FontWeight.bold,
+                                                    ),
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          );
+                                        }).toList(),
                                       ),
                                     ],
-                                  ),
-                                );
-                              }).toList(),
-                            ),
-                          const SizedBox(height: 12),
+                                  ],
+                                  const SizedBox(height: 12),
 
                           // أزرار العمليات بالأسفل
                           Row(

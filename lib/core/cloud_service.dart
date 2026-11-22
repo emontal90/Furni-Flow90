@@ -118,9 +118,15 @@ class CloudSubscriptionData {
       planDays: int.tryParse(json['plan_days']?.toString() ?? '') ?? 30,
       amount: num.tryParse(json['amount']?.toString() ?? '') ?? 0,
       licenseKey: json['license_key']?.toString(),
-      startsAt: json['starts_at'] != null ? DateTime.tryParse(json['starts_at'].toString()) : null,
-      expiresAt: json['expires_at'] != null ? DateTime.tryParse(json['expires_at'].toString()) : null,
-      createdAt: json['created_at'] != null ? DateTime.tryParse(json['created_at'].toString()) : null,
+      startsAt: json['starts_at'] != null
+          ? DateTime.tryParse(json['starts_at'].toString())
+          : null,
+      expiresAt: json['expires_at'] != null
+          ? DateTime.tryParse(json['expires_at'].toString())
+          : null,
+      createdAt: json['created_at'] != null
+          ? DateTime.tryParse(json['created_at'].toString())
+          : null,
     );
   }
 }
@@ -152,7 +158,8 @@ class CloudBackupItem {
       deviceCode: json['device_code']?.toString() ?? '',
       fileName: json['file_name']?.toString() ?? '',
       storagePath: json['storage_path']?.toString() ?? '',
-      fileSizeBytes: int.tryParse(json['file_size_bytes']?.toString() ?? '') ?? 0,
+      fileSizeBytes:
+          int.tryParse(json['file_size_bytes']?.toString() ?? '') ?? 0,
       fileSizeFormatted: json['file_size_formatted']?.toString() ?? '0 KB',
       isAuto: json['is_auto'] == true || json['is_auto'] == 'true',
       createdAt: json['created_at'] != null
@@ -163,9 +170,11 @@ class CloudBackupItem {
 }
 
 class CloudService {
-  static const String defaultSupabaseUrl = 'https://httdsktwfnrkhhlcznzo.supabase.co';
+  static const String defaultSupabaseUrl =
+      'https://httdsktwfnrkhhlcznzo.supabase.co';
   // يتم تمرير المفتاح بشكل آمن أثناء البناء عبر --dart-define دون دمج أو كتابة أي مفتاح في الكود المصدري
-  static const String _compileTimeAnonKey = String.fromEnvironment('SUPABASE_ANON_KEY');
+  static const String _compileTimeAnonKey =
+      String.fromEnvironment('SUPABASE_ANON_KEY');
   static const String bucketName = 'furniflow-backups';
   static const String approvedPaymentNumber = '01094085228';
   static const int maxCloudBackups = 5;
@@ -190,7 +199,9 @@ class CloudService {
         final localConfigFile = File('portal/config.js');
         if (await localConfigFile.exists()) {
           final content = await localConfigFile.readAsString();
-          final match = RegExp(r'SUPABASE_ANON_KEY:\s*["\x27]([^"\x27]+)["\x27]').firstMatch(content);
+          final match =
+              RegExp(r'SUPABASE_ANON_KEY:\s*["\x27]([^"\x27]+)["\x27]')
+                  .firstMatch(content);
           if (match != null && match.group(1) != null) {
             final key = match.group(1)!.trim();
             if (key.isNotEmpty && !key.startsWith('PASTE_')) {
@@ -234,7 +245,8 @@ class CloudService {
   // -------------------------------------------------------------
 
   /// إرسال طلب اشتراك جديد إلى سوبا بيز
-  static Future<({bool success, String? error, CloudSubscriptionData? data})> submitSubscriptionRequest({
+  static Future<({bool success, String? error, CloudSubscriptionData? data})>
+      submitSubscriptionRequest({
     required String deviceCode,
     required String senderPhone,
     required String referenceNo,
@@ -249,7 +261,9 @@ class CloudService {
         'device_code': deviceCode.trim().toUpperCase(),
         'sender_phone': senderPhone.trim(),
         'reference_no': referenceNo.trim(),
-        'payment_method': paymentMethod == PaymentMethod.vodafoneCash ? 'vodafone_cash' : 'instapay',
+        'payment_method': paymentMethod == PaymentMethod.vodafoneCash
+            ? 'vodafone_cash'
+            : 'instapay',
         'plan_type': plan.id,
         'plan_days': plan.days,
         'amount': plan.price,
@@ -258,11 +272,13 @@ class CloudService {
         'updated_at': DateTime.now().toUtc().toIso8601String(),
       };
 
-      final response = await http.post(
-        Uri.parse('$baseUrl/rest/v1/app_subscriptions'),
-        headers: headers,
-        body: jsonEncode(payload),
-      ).timeout(const Duration(seconds: 15));
+      final response = await http
+          .post(
+            Uri.parse('$baseUrl/rest/v1/app_subscriptions'),
+            headers: headers,
+            body: jsonEncode(payload),
+          )
+          .timeout(const Duration(seconds: 15));
 
       if (response.statusCode >= 200 && response.statusCode < 300) {
         final decoded = jsonDecode(response.body);
@@ -280,7 +296,8 @@ class CloudService {
       } else {
         return (
           success: false,
-          error: 'فشل إرسال الطلب: رمز الاستجابة (${response.statusCode}) - ${response.body}',
+          error:
+              'فشل إرسال الطلب: رمز الاستجابة (${response.statusCode}) - ${response.body}',
           data: null,
         );
       }
@@ -294,7 +311,8 @@ class CloudService {
   }
 
   /// الاستعلام عن حالة اشتراك الجهاز في سوبا بيز وتحديث ترخيص التطبيق فوراً
-  static Future<CloudSubscriptionData?> checkAndSyncSubscriptionStatus(String deviceCode) async {
+  static Future<CloudSubscriptionData?> checkAndSyncSubscriptionStatus(
+      String deviceCode) async {
     try {
       final baseUrl = await getSupabaseUrl();
       final headers = await _getHeaders();
@@ -304,15 +322,20 @@ class CloudService {
         '$baseUrl/rest/v1/app_subscriptions?device_code=eq.$cleanDevice&order=created_at.desc&limit=1',
       );
 
-      final response = await http.get(url, headers: headers).timeout(const Duration(seconds: 12));
+      final response = await http
+          .get(url, headers: headers)
+          .timeout(const Duration(seconds: 12));
       if (response.statusCode >= 200 && response.statusCode < 300) {
         final decoded = jsonDecode(response.body);
         if (decoded is List && decoded.isNotEmpty) {
-          final item = CloudSubscriptionData.fromJson(decoded.first as Map<String, dynamic>);
+          final item = CloudSubscriptionData.fromJson(
+              decoded.first as Map<String, dynamic>);
           cloudStatusNotifier.value = item;
 
           // إذا كان الاشتراك نشطاً ويحتوي على مفتاح ترخيص، نقوم بتفعيله تلقائياً في التطبيق
-          if (item.isActive && item.licenseKey != null && item.licenseKey!.isNotEmpty) {
+          if (item.isActive &&
+              item.licenseKey != null &&
+              item.licenseKey!.isNotEmpty) {
             await LicenseService.activateWithKey(item.licenseKey!);
           } else if (item.isPaused || item.isExpired) {
             // في حالة إيقاف الاشتراك أو انتهائه
@@ -339,11 +362,16 @@ class CloudService {
   }
 
   /// رفع نسخة احتياطية مشفرة إلى سوبا بيز (يدوية أو تلقائية)
-  static Future<({bool success, String message, CloudBackupItem? item})> uploadEncryptedBackup({
+  static Future<({bool success, String message, CloudBackupItem? item})>
+      uploadEncryptedBackup({
     bool isAuto = false,
   }) async {
     if (kIsWeb) {
-      return (success: false, message: 'النسخ السحابي غير مدعوم على الويب', item: null);
+      return (
+        success: false,
+        message: 'النسخ السحابي غير مدعوم على الويب',
+        item: null
+      );
     }
 
     try {
@@ -351,7 +379,8 @@ class CloudService {
       if (!isEligible) {
         return (
           success: false,
-          message: 'خدمة النسخ السحابي متاحة للمشتركين فقط. يرجى تفعيل الاشتراك أولاً.',
+          message:
+              'خدمة النسخ السحابي متاحة للمشتركين فقط. يرجى تفعيل الاشتراك أولاً.',
           item: null,
         );
       }
@@ -364,7 +393,11 @@ class CloudService {
 
       final dbFile = await BackupService.getDatabaseFile();
       if (!await dbFile.exists()) {
-        return (success: false, message: 'قاعدة البيانات غير موجودة', item: null);
+        return (
+          success: false,
+          message: 'قاعدة البيانات غير موجودة',
+          item: null
+        );
       }
 
       final deviceCode = await SecurityStorageService.getDeviceCode();
@@ -407,18 +440,21 @@ class CloudService {
         }).timeout(const Duration(seconds: 10));
       } catch (_) {}
 
-      final storageResponse = await http.post(
-        storageUrl,
-        headers: {
-          'apikey': anonKey,
-          'Authorization': 'Bearer $anonKey',
-          'Content-Type': 'application/octet-stream',
-          'x-upsert': 'true',
-        },
-        body: encryptedBytes,
-      ).timeout(const Duration(seconds: 45));
+      final storageResponse = await http
+          .post(
+            storageUrl,
+            headers: {
+              'apikey': anonKey,
+              'Authorization': 'Bearer $anonKey',
+              'Content-Type': 'application/octet-stream',
+              'x-upsert': 'true',
+            },
+            body: encryptedBytes,
+          )
+          .timeout(const Duration(seconds: 45));
 
-      if (storageResponse.statusCode < 200 || storageResponse.statusCode >= 300) {
+      if (storageResponse.statusCode < 200 ||
+          storageResponse.statusCode >= 300) {
         String detail = '';
         try {
           final errJson = jsonDecode(storageResponse.body);
@@ -426,7 +462,8 @@ class CloudService {
         } catch (_) {}
         return (
           success: false,
-          message: 'فشل رفع الملف إلى مساحة التخزين السحابي (${storageResponse.statusCode})${detail.isNotEmpty ? ": $detail" : ""}',
+          message:
+              'فشل رفع الملف إلى مساحة التخزين السحابي (${storageResponse.statusCode})${detail.isNotEmpty ? ": $detail" : ""}',
           item: null,
         );
       }
@@ -449,17 +486,21 @@ class CloudService {
         'created_at': DateTime.now().toUtc().toIso8601String(),
       };
 
-      final dbInsertResponse = await http.post(
-        Uri.parse('$baseUrl/rest/v1/cloud_backups'),
-        headers: insertHeaders,
-        body: jsonEncode(insertPayload),
-      ).timeout(const Duration(seconds: 15));
+      final dbInsertResponse = await http
+          .post(
+            Uri.parse('$baseUrl/rest/v1/cloud_backups'),
+            headers: insertHeaders,
+            body: jsonEncode(insertPayload),
+          )
+          .timeout(const Duration(seconds: 15));
 
       CloudBackupItem? createdItem;
-      if (dbInsertResponse.statusCode >= 200 && dbInsertResponse.statusCode < 300) {
+      if (dbInsertResponse.statusCode >= 200 &&
+          dbInsertResponse.statusCode < 300) {
         final decoded = jsonDecode(dbInsertResponse.body);
         if (decoded is List && decoded.isNotEmpty) {
-          createdItem = CloudBackupItem.fromJson(decoded.first as Map<String, dynamic>);
+          createdItem =
+              CloudBackupItem.fromJson(decoded.first as Map<String, dynamic>);
         }
       }
 
@@ -474,7 +515,8 @@ class CloudService {
 
       return (
         success: true,
-        message: 'تم رفع النسخة الاحتياطية المشفرة سحابياً بنجاح ($sizeFormatted)',
+        message:
+            'تم رفع النسخة الاحتياطية المشفرة سحابياً بنجاح ($sizeFormatted)',
         item: createdItem,
       );
     } catch (e) {
@@ -487,7 +529,8 @@ class CloudService {
   }
 
   /// جلب قائمة النسخ السحابية المتاحة لهذا الجهاز
-  static Future<List<CloudBackupItem>> fetchCloudBackups(String deviceCode) async {
+  static Future<List<CloudBackupItem>> fetchCloudBackups(
+      String deviceCode) async {
     try {
       final baseUrl = await getSupabaseUrl();
       final headers = await _getHeaders();
@@ -497,7 +540,9 @@ class CloudService {
         '$baseUrl/rest/v1/cloud_backups?device_code=eq.$cleanDevice&order=created_at.desc',
       );
 
-      final response = await http.get(url, headers: headers).timeout(const Duration(seconds: 15));
+      final response = await http
+          .get(url, headers: headers)
+          .timeout(const Duration(seconds: 15));
       if (response.statusCode >= 200 && response.statusCode < 300) {
         final decoded = jsonDecode(response.body);
         if (decoded is List) {
@@ -511,7 +556,8 @@ class CloudService {
   }
 
   /// تنزيل نسخة احتياطية من السحابة وفك تشفيرها واستعادتها
-  static Future<({bool success, String message})> restoreFromCloud(CloudBackupItem item) async {
+  static Future<({bool success, String message})> restoreFromCloud(
+      CloudBackupItem item) async {
     if (kIsWeb) {
       return (success: false, message: 'الاستعادة غير مدعومة على الويب');
     }
@@ -550,7 +596,8 @@ class CloudService {
       // حفظ النسخة المستعادة في ملف مؤقت
       final tempDir = await getTemporaryDirectory();
       final tempRestoreFile = File(
-        p.join(tempDir.path, 'restored_${DateTime.now().millisecondsSinceEpoch}.db'),
+        p.join(tempDir.path,
+            'restored_${DateTime.now().millisecondsSinceEpoch}.db'),
       );
       await tempRestoreFile.writeAsBytes(plainDbBytes, flush: true);
 
@@ -562,12 +609,22 @@ class CloudService {
       } catch (_) {}
 
       if (ok) {
-        return (success: true, message: 'تمت استعادة النسخة الاحتياطية بنجاح من السحابة وتحديث البيانات!');
+        return (
+          success: true,
+          message:
+              'تمت استعادة النسخة الاحتياطية بنجاح من السحابة وتحديث البيانات!'
+        );
       } else {
-        return (success: false, message: 'فشلت معالجة ملف قاعدة البيانات المستعاد');
+        return (
+          success: false,
+          message: 'فشلت معالجة ملف قاعدة البيانات المستعاد'
+        );
       }
     } catch (e) {
-      return (success: false, message: 'حدث خطأ أثناء استعادة النسخة من السحابة: $e');
+      return (
+        success: false,
+        message: 'حدث خطأ أثناء استعادة النسخة من السحابة: $e'
+      );
     }
   }
 
@@ -619,7 +676,8 @@ class CloudService {
       if (!isEligible) return;
 
       final todayStr = intl.DateFormat('yyyy-MM-dd').format(DateTime.now());
-      final lastDate = await SecurityStorageService.getString('last_cloud_backup_date');
+      final lastDate =
+          await SecurityStorageService.getString('last_cloud_backup_date');
 
       if (lastDate != todayStr) {
         // إجراء نسخ سحابي صامت

@@ -115,29 +115,74 @@ class CategoryStockHelper {
     );
   }
 
-  /// استخراج التفصيل الكامل لصنف في المخزن
-  static StockBreakdown calculateCategoryBreakdown(Map<String, dynamic> cat) {
-    final comps = parseComponents(cat['components_json']);
-    if (comps.isNotEmpty) {
-      return computeBreakdownFromPieces(comps, qtyKey: 'qty');
+  /// التحقق مما إذا كانت القطعة تابعة لقسم الترابيزات
+  static bool isTablePiece(dynamic piece) {
+    if (piece is! Map) return false;
+    return piece['is_table'] == true || piece['is_table'] == 1;
+  }
+
+  /// استخراج قطع الطقم الأساسي فقط (كنب، كراسي، فوتيهات) باستثناء الترابيزات
+  static List<Map<String, dynamic>> getMainComponents(dynamic raw) {
+    final all = parseComponents(raw);
+    return all.where((c) => !isTablePiece(c)).toList();
+  }
+
+  /// استخراج قطع طقم الترابيزات فقط التابعة للصنف
+  static List<Map<String, dynamic>> getTableComponents(dynamic raw) {
+    final all = parseComponents(raw);
+    return all.where((c) => isTablePiece(c)).toList();
+  }
+
+  /// هل يحتوي الصنف على مكونات طقم ترابيزة؟
+  static bool hasTables(Map<String, dynamic> cat) {
+    return getTableComponents(cat['components_json']).isNotEmpty;
+  }
+
+  /// استخراج التفصيل الكامل لصنف في المخزن (للطقم الأساسي أو لطقم الترابيزات)
+  static StockBreakdown calculateCategoryBreakdown(Map<String, dynamic> cat, {bool isTableOnly = false}) {
+    final allComps = parseComponents(cat['components_json']);
+    if (allComps.isNotEmpty) {
+      final targetComps = isTableOnly
+          ? allComps.where((c) => isTablePiece(c)).toList()
+          : allComps.where((c) => !isTablePiece(c)).toList();
+
+      if (targetComps.isNotEmpty) {
+        return computeBreakdownFromPieces(targetComps, qtyKey: 'qty');
+      }
+      return const StockBreakdown(
+        completeSets: 0,
+        individualPieces: 0,
+        totalPieces: 0,
+        excessPieces: [],
+      );
     }
     final fallbackSets = math.max(0, parseInt(cat['stock_qty']));
     return StockBreakdown(
-      completeSets: fallbackSets,
+      completeSets: isTableOnly ? 0 : fallbackSets,
       individualPieces: 0,
       totalPieces: 0,
       excessPieces: const [],
     );
   }
 
+  /// استخراج تفصيل مخزون الترابيزات فقط للصنف
+  static StockBreakdown calculateTableBreakdown(Map<String, dynamic> cat) {
+    return calculateCategoryBreakdown(cat, isTableOnly: true);
+  }
+
+  /// استخراج تفصيل مخزون الأطقم الأساسية فقط للصنف
+  static StockBreakdown calculateMainBreakdown(Map<String, dynamic> cat) {
+    return calculateCategoryBreakdown(cat, isTableOnly: false);
+  }
+
   /// استخراج عدد الأطقم الكاملة المتوفرة في المخزن لصنف معين بدقة
-  static int calculateCompleteSets(Map<String, dynamic> cat) {
-    return calculateCategoryBreakdown(cat).completeSets;
+  static int calculateCompleteSets(Map<String, dynamic> cat, {bool isTableOnly = false}) {
+    return calculateCategoryBreakdown(cat, isTableOnly: isTableOnly).completeSets;
   }
 
   /// استخراج عدد القطع الفردية الزائدة (التي لا تكمل طقماً كاملاً)
-  static int calculateIndividualPieces(Map<String, dynamic> cat) {
-    return calculateCategoryBreakdown(cat).individualPieces;
+  static int calculateIndividualPieces(Map<String, dynamic> cat, {bool isTableOnly = false}) {
+    return calculateCategoryBreakdown(cat, isTableOnly: isTableOnly).individualPieces;
   }
 
   /// صياغة نص موحد يجمع الأطقم والفردي (مثال: "2 طقم و 3 فردي")
@@ -153,9 +198,15 @@ class CategoryStockHelper {
     }
   }
 
-  /// نص موجز ومحدد يوضح رصيد المعرض الحقيقي بدقة
+  /// نص موجز ومحدد يوضح رصيد المعرض الحقيقي للأطقم الأساسية
   static String formatStockSummary(Map<String, dynamic> cat) {
-    final b = calculateCategoryBreakdown(cat);
+    final b = calculateMainBreakdown(cat);
+    return formatSetsAndIndividual(b.completeSets, b.individualPieces);
+  }
+
+  /// نص موجز ومحدد يوضح رصيد المعرض لطقم الترابيزات
+  static String formatTableSummary(Map<String, dynamic> cat) {
+    final b = calculateTableBreakdown(cat);
     return formatSetsAndIndividual(b.completeSets, b.individualPieces);
   }
 

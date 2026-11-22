@@ -280,7 +280,9 @@ class UpholstererStatementHelper {
     for (final cat in categories) {
       final int id = _parseInt(cat['id']);
       final String name = (cat['name'] ?? '').toString().trim();
-      final List<dynamic> comps = _parseJsonPieces(cat['components_json']);
+      final List<dynamic> comps = _parseJsonPieces(cat['components_json'])
+          .where((c) => c['is_table'] != true && c['is_table'] != 1)
+          .toList();
       if (id > 0) compsById[id] = comps;
       if (name.isNotEmpty) compsByName[name] = comps;
     }

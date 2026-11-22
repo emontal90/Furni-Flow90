@@ -24,6 +24,7 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
   int? _selectedCustomerId;
   int? _selectedCategoryId;
   int _orderSetsCount = 1;
+  bool _includeTables = false;
   List<Map<String, dynamic>> _editableComponents = [];
 
   bool _addFromOtherCategory = false;
@@ -82,11 +83,9 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
   }
 
   void _loadComponentsFromCategory(Map<String, dynamic> cat) {
-    List decoded = [];
-    try {
-      decoded = jsonDecode(cat['components_json']);
-    } catch (_) {}
     _orderSetsCount = 1;
+    _includeTables = false;
+    final mainPieces = CategoryStockHelper.getMainComponents(cat['components_json']);
     final preservedCrossPieces = _editableComponents
         .where((c) => c['source_category_id'] != null && c['source_category_id'] != cat['id'])
         .toList();
@@ -95,23 +94,50 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
     }
     setState(() {
       _editableComponents = [
-        ...decoded.map((e) {
-          final int baseQty = (e['base_qty'] is int)
-              ? e['base_qty']
-              : int.tryParse(e['base_qty']?.toString() ?? '') ??
-                  ((e['qty'] is int) ? e['qty'] : int.tryParse(e['qty']?.toString() ?? '') ?? 1);
+        ...mainPieces.map((e) {
+          final int baseQty = CategoryStockHelper.parseInt(e['base_qty'], fallback: 1);
           final int finalBase = baseQty > 0 ? baseQty : 1;
           return {
-            'name': e['name'].toString(),
+            'name': (e['name'] ?? '').toString(),
             'base_qty': finalBase,
             'qty': finalBase * _orderSetsCount,
             'original_qty': finalBase,
             'selected': true,
             'is_custom': false,
+            'is_table': false,
           };
         }),
         ...preservedCrossPieces,
       ];
+    });
+  }
+
+  void _toggleIncludeTables(bool include) {
+    if (_selectedCategory == null) return;
+    setState(() {
+      _includeTables = include;
+      if (include) {
+        final tableComps = CategoryStockHelper.getTableComponents(_selectedCategory!['components_json']);
+        for (final t in tableComps) {
+          final String name = (t['name'] ?? '').toString().trim();
+          if (name.isEmpty) continue;
+          final int baseQty = CategoryStockHelper.parseInt(t['base_qty'], fallback: 1);
+          final int finalBase = baseQty > 0 ? baseQty : 1;
+          if (!_editableComponents.any((c) => c['name'] == name && c['is_table'] == true)) {
+            _editableComponents.add({
+              'name': name,
+              'base_qty': finalBase,
+              'qty': finalBase * (_orderSetsCount > 0 ? _orderSetsCount : 1),
+              'original_qty': finalBase,
+              'selected': true,
+              'is_custom': false,
+              'is_table': true,
+            });
+          }
+        }
+      } else {
+        _editableComponents.removeWhere((c) => c['is_table'] == true);
+      }
     });
   }
 
@@ -287,6 +313,7 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
       setState(() {
         _selectedCategoryId = null;
         _editableComponents.clear();
+        _includeTables = false;
         _addFromOtherCategory = false;
         _secondaryCategoryId = null;
       });
@@ -311,6 +338,7 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
               'name': c['name'],
               'qty': c['qty'],
               'base_qty': c['base_qty'] ?? 0,
+              if (c['is_table'] == true) 'is_table': true,
               if (c['is_custom'] == true) 'is_custom': true,
               if (c['source_category_id'] != null) 'source_category_id': c['source_category_id'],
               if (c['source_category_name'] != null) 'source_category_name': c['source_category_name'],
@@ -476,6 +504,66 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
                         ),
                       ],
                     ),
+
+                    // زر تحويل تضمين الترابيزات أسفل اسم الطقم
+                    if (CategoryStockHelper.hasTables(_selectedCategory!)) ...[
+                      const SizedBox(height: 10),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: _includeTables
+                              ? const Color(0xFF0D9488).withValues(alpha: 0.08)
+                              : AppTheme.subtleBg(context),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(
+                            color: _includeTables
+                                ? const Color(0xFF0D9488).withValues(alpha: 0.4)
+                                : AppTheme.borderColor(context),
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Row(
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.all(6),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFF0D9488).withValues(alpha: 0.12),
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: const Icon(Icons.table_restaurant_rounded, color: Color(0xFF0D9488), size: 20),
+                                ),
+                                const SizedBox(width: 10),
+                                Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const Text(
+                                      'تضمين الترابيزات',
+                                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Color(0xFF0F766E)),
+                                    ),
+                                    Text(
+                                      _includeTables
+                                          ? 'تم إدراج قطع الترابيزات بالطلب ويمكنك تعديلها أو حذفها'
+                                          : 'اضغط لإدراج طقم الترابيزات الخاص بهذا الصنف بالطلب',
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        color: _includeTables ? const Color(0xFF0F766E) : AppTheme.textMuted(context),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                            Switch.adaptive(
+                              value: _includeTables,
+                              activeThumbColor: const Color(0xFF0D9488),
+                              onChanged: _toggleIncludeTables,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                     const SizedBox(height: 12),
 
                     // صندوق اختيار عدد الأطقم المطلوبة للطلب
@@ -598,34 +686,39 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
                         final bool isSelected = comp['selected'] == true || hasQty;
                         final bool isFromOtherCat = comp['source_category_id'] != null;
                         final bool isCustom = comp['is_custom'] == true;
+                        final bool isTable = comp['is_table'] == true;
                         final int baseQty = (comp['base_qty'] as int?) ?? 1;
 
                         return Container(
                           margin: const EdgeInsets.symmetric(vertical: 5),
                           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                           decoration: BoxDecoration(
-                            color: isFromOtherCat
+                            color: isTable
                                 ? const Color(0xFFF0FDFA)
-                                : (isCustom
-                                    ? Colors.blue.shade50.withValues(alpha: 0.6)
-                                    : (isSelected
-                                        ? AppTheme.royalGold.withValues(alpha: 0.12)
-                                        : Colors.white)),
+                                : (isFromOtherCat
+                                    ? const Color(0xFFF0FDFA)
+                                    : (isCustom
+                                        ? Colors.blue.shade50.withValues(alpha: 0.6)
+                                        : (isSelected
+                                            ? AppTheme.royalGold.withValues(alpha: 0.12)
+                                            : Colors.white))),
                             borderRadius: BorderRadius.circular(12),
                             border: Border.all(
-                              color: isFromOtherCat
+                              color: isTable
                                   ? const Color(0xFF0D9488)
-                                  : (isCustom
-                                      ? Colors.blue.shade300
-                                      : (isSelected
-                                          ? AppTheme.royalGold
-                                          : Colors.grey.shade300)),
-                              width: (isSelected || isCustom || isFromOtherCat) ? 1.5 : 1.0,
+                                  : (isFromOtherCat
+                                      ? const Color(0xFF0D9488)
+                                      : (isCustom
+                                          ? Colors.blue.shade300
+                                          : (isSelected
+                                              ? AppTheme.royalGold
+                                              : Colors.grey.shade300))),
+                              width: (isSelected || isCustom || isFromOtherCat || isTable) ? 1.5 : 1.0,
                             ),
                             boxShadow: [
-                              if (isFromOtherCat || isSelected)
+                              if (isFromOtherCat || isSelected || isTable)
                                 BoxShadow(
-                                  color: (isFromOtherCat ? const Color(0xFF0D9488) : AppTheme.royalGold)
+                                  color: (isTable || isFromOtherCat ? const Color(0xFF0D9488) : AppTheme.royalGold)
                                       .withValues(alpha: 0.08),
                                   blurRadius: 4,
                                   offset: const Offset(0, 2),
@@ -659,7 +752,9 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
                                         isSelected
                                             ? Icons.check_box_rounded
                                             : Icons.check_box_outline_blank_rounded,
-                                        color: isSelected ? AppTheme.primaryNavy : Colors.grey.shade400,
+                                        color: isSelected
+                                            ? (isTable ? const Color(0xFF0D9488) : AppTheme.primaryNavy)
+                                            : Colors.grey.shade400,
                                         size: 24,
                                       ),
                                     ),
@@ -679,7 +774,31 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
                                             color: isSelected ? Colors.black87 : Colors.grey.shade700,
                                           ),
                                         ),
-                                        if (isFromOtherCat)
+                                        if (isTable)
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
+                                            decoration: BoxDecoration(
+                                              color: const Color(0xFFCCFBF1),
+                                              borderRadius: BorderRadius.circular(8),
+                                              border: Border.all(color: const Color(0xFF5EEAD4)),
+                                            ),
+                                            child: const Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                Icon(Icons.table_restaurant_rounded, size: 12, color: Color(0xFF0D9488)),
+                                                SizedBox(width: 4),
+                                                Text(
+                                                  'طقم ترابيزات',
+                                                  style: TextStyle(
+                                                    fontSize: 11,
+                                                    fontWeight: FontWeight.bold,
+                                                    color: Color(0xFF0F766E),
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          )
+                                        else if (isFromOtherCat)
                                           Container(
                                             padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
                                             decoration: BoxDecoration(
@@ -715,15 +834,18 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
                                       ],
                                     ),
                                   ),
-                                  if (isCustom)
+                                  if (isCustom || isTable)
                                     IconButton(
                                       icon: const Icon(Icons.delete_outline, color: Colors.red, size: 21),
-                                      tooltip: 'حذف هذه القطعة',
+                                      tooltip: isTable ? 'إزالة هذه الترابيزة من الطلب' : 'حذف هذه القطعة',
                                       padding: EdgeInsets.zero,
                                       constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
                                       onPressed: () {
                                         setState(() {
                                           _editableComponents.removeAt(idx);
+                                          if (isTable && !_editableComponents.any((c) => c['is_table'] == true)) {
+                                            _includeTables = false;
+                                          }
                                         });
                                       },
                                     ),
@@ -737,15 +859,17 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
                                   const SizedBox(width: 36),
                                   Expanded(
                                     child: Text(
-                                      isFromOtherCat
-                                          ? 'قطعة فردية تُخصم من مخزون (${comp['source_category_name']}) عند التسليم'
-                                          : (isCustom
-                                              ? 'قطعة إضافية مخصصة للطلب'
-                                              : 'النسبة لكل طقم: $baseQty قطعة'),
+                                      isTable
+                                          ? 'قطعة ترابيزة (النسبة لكل طقم: $baseQty قطعة)'
+                                          : (isFromOtherCat
+                                              ? 'قطعة فردية تُخصم من مخزون (${comp['source_category_name']}) عند التسليم'
+                                              : (isCustom
+                                                  ? 'قطعة إضافية مخصصة للطلب'
+                                                  : 'النسبة لكل طقم: $baseQty قطعة')),
                                       style: TextStyle(
                                         fontSize: 11.5,
-                                        color: isFromOtherCat ? const Color(0xFF0F766E) : Colors.grey.shade600,
-                                        fontWeight: isFromOtherCat ? FontWeight.w600 : FontWeight.normal,
+                                        color: (isTable || isFromOtherCat) ? const Color(0xFF0F766E) : Colors.grey.shade600,
+                                        fontWeight: (isTable || isFromOtherCat) ? FontWeight.w600 : FontWeight.normal,
                                       ),
                                     ),
                                   ),

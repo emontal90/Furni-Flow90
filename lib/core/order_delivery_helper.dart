@@ -104,6 +104,8 @@ class OrderDeliveryHelper {
     final map = <String, int>{};
     for (final item in rawCategoryComps) {
       if (item is! Map) continue;
+      // استثناء قطع الترابيزات من حساب النسبة الأساسية لطقم الصالون/الكنب الرئيسي
+      if (item['is_table'] == true || item['is_table'] == 1) continue;
       final name = (item['name'] ?? '').toString().trim();
       if (name.isEmpty) continue;
       final base = _parseInt(item['base_qty'], fallback: 1);
@@ -136,6 +138,7 @@ class OrderDeliveryHelper {
 
         final bool isFromOtherCategory = sourceCatId != null && sourceCatId > 0;
         final bool isCustom = item['is_custom'] == true || isFromOtherCategory;
+        final bool isTable = item['is_table'] == true || item['is_table'] == 1;
         final int rawBase = item.containsKey('base_qty')
             ? _parseInt(item['base_qty'])
             : (isCustom ? 0 : (categoryBase[name] ?? 1));
@@ -145,6 +148,7 @@ class OrderDeliveryHelper {
           'name': name,
           'qty': qty,
           'base_qty': safeBase,
+          if (isTable) 'is_table': true,
           if (isCustom) 'is_custom': true,
           if (isFromOtherCategory) 'source_category_id': sourceCatId,
           if (isFromOtherCategory && sourceCatName.isNotEmpty) 'source_category_name': sourceCatName,
@@ -295,6 +299,7 @@ class OrderDeliveryHelper {
       final String sourcePieceName = (piece['source_piece_name'] ?? '').toString().trim();
       final bool isFromOtherCategory = sourceCatId != null && sourceCatId > 0;
       final bool isCustom = piece['is_custom'] == true || isFromOtherCategory;
+      final bool isTable = piece['is_table'] == true || piece['is_table'] == 1;
       final int baseQty = piece.containsKey('base_qty')
           ? _parseInt(piece['base_qty'])
           : (isCustom ? 0 : 1);
@@ -308,6 +313,7 @@ class OrderDeliveryHelper {
           'name': name,
           'qty': toDeliver,
           'base_qty': baseQty,
+          if (isTable) 'is_table': true,
           if (isCustom) 'is_custom': true,
           if (isFromOtherCategory) 'source_category_id': sourceCatId,
           if (isFromOtherCategory && sourceCatName.isNotEmpty) 'source_category_name': sourceCatName,
@@ -326,6 +332,7 @@ class OrderDeliveryHelper {
           'name': name,
           'qty': left,
           'base_qty': baseQty,
+          if (isTable) 'is_table': true,
           if (isCustom) 'is_custom': true,
           if (isFromOtherCategory) 'source_category_id': sourceCatId,
           if (isFromOtherCategory && sourceCatName.isNotEmpty) 'source_category_name': sourceCatName,
@@ -347,7 +354,16 @@ class OrderDeliveryHelper {
     }
 
     int newCategorySets = fallbackCategoryStock;
-    if (updatedCategoryComps.isNotEmpty) {
+    final mainCategoryComps = updatedCategoryComps
+        .where((c) => c['is_table'] != true && c['is_table'] != 1)
+        .toList();
+    if (mainCategoryComps.isNotEmpty) {
+      newCategorySets = mainCategoryComps.map<int>((c) {
+        final q = _parseInt(c['qty']);
+        final b = _parseInt(c['base_qty'], fallback: 1);
+        return q ~/ (b > 0 ? b : 1);
+      }).reduce(math.min);
+    } else if (updatedCategoryComps.isNotEmpty) {
       newCategorySets = updatedCategoryComps.map<int>((c) {
         final q = _parseInt(c['qty']);
         final b = _parseInt(c['base_qty'], fallback: 1);

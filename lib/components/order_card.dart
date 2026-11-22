@@ -317,23 +317,30 @@ class OrderCard extends StatelessWidget {
                   final int pieceCount = (c['qty'] is int)
                       ? c['qty'] as int
                       : (int.tryParse(c['qty']?.toString() ?? '0') ?? 0);
+                  final bool isTable = c['is_table'] == true || c['is_table'] == 1;
 
                   return Container(
                     padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
                     decoration: BoxDecoration(
-                      color: pieceCount > 0 ? AppTheme.infoBg(context) : AppTheme.subtleBg(context),
+                      color: isTable
+                          ? (pieceCount > 0 ? const Color(0xFFF0FDFA) : AppTheme.subtleBg(context))
+                          : (pieceCount > 0 ? AppTheme.infoBg(context) : AppTheme.subtleBg(context)),
                       borderRadius: BorderRadius.circular(8),
                       border: Border.all(
-                        color: pieceCount > 0 ? AppTheme.infoBorder(context) : AppTheme.borderColor(context),
+                        color: isTable
+                            ? (pieceCount > 0 ? const Color(0xFF5EEAD4) : AppTheme.borderColor(context))
+                            : (pieceCount > 0 ? AppTheme.infoBorder(context) : AppTheme.borderColor(context)),
                       ),
                     ),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Icon(
-                          Icons.chair_rounded,
+                          isTable ? Icons.table_restaurant_rounded : Icons.chair_rounded,
                           size: 14,
-                          color: pieceCount > 0 ? AppTheme.infoFg(context) : AppTheme.textMuted(context),
+                          color: isTable
+                              ? (pieceCount > 0 ? const Color(0xFF0D9488) : AppTheme.textMuted(context))
+                              : (pieceCount > 0 ? AppTheme.infoFg(context) : AppTheme.textMuted(context)),
                         ),
                         const SizedBox(width: 5),
                         Text(
@@ -341,14 +348,18 @@ class OrderCard extends StatelessWidget {
                           style: TextStyle(
                             fontWeight: FontWeight.bold,
                             fontSize: 12.5,
-                            color: pieceCount > 0 ? AppTheme.infoFg(context) : AppTheme.textMuted(context),
+                            color: isTable
+                                ? (pieceCount > 0 ? const Color(0xFF0F766E) : AppTheme.textMuted(context))
+                                : (pieceCount > 0 ? AppTheme.infoFg(context) : AppTheme.textMuted(context)),
                           ),
                         ),
                         const SizedBox(width: 6),
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
                           decoration: BoxDecoration(
-                            color: pieceCount > 0 ? AppTheme.primaryNavy : Colors.grey.shade400,
+                            color: isTable
+                                ? (pieceCount > 0 ? const Color(0xFF0D9488) : Colors.grey.shade400)
+                                : (pieceCount > 0 ? AppTheme.primaryNavy : Colors.grey.shade400),
                             borderRadius: BorderRadius.circular(5),
                           ),
                           child: Text(

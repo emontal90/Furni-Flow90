@@ -224,7 +224,7 @@ class _UpholstererScreenState extends State<UpholstererScreen>
     Map<String, dynamic> cat,
     Map<String, dynamic>? batch,
   ) {
-    final catComps = CategoryStockHelper.parseComponents(cat['components_json']);
+    final catComps = CategoryStockHelper.getMainComponents(cat['components_json']);
     final batchPieces = batch != null
         ? UpholstererStatementHelper.parseBatchPieces(batch)
         : const <Map<String, dynamic>>[];
@@ -399,7 +399,7 @@ class _UpholstererScreenState extends State<UpholstererScreen>
     final String catName = (category['name'] ?? '').toString().trim();
     final String normName = SearchableSelectFormField.normalizeArabic(catName);
     final String targetType = isReceiveTab ? 'receive' : 'send';
-    final catComps = CategoryStockHelper.parseComponents(category['components_json']);
+    final catComps = CategoryStockHelper.getMainComponents(category['components_json']);
 
     final matchingTxs = _transactions.where((tx) {
       if ((tx['action_type'] ?? '').toString() != targetType) return false;
@@ -589,7 +589,7 @@ class _UpholstererScreenState extends State<UpholstererScreen>
     final String catName = (category['name'] ?? '').toString().trim();
     final batch = _findMergedBatchForCategory(category);
     final workshopPieces = _buildCategoryWorkshopPieces(category, batch);
-    final catComps = CategoryStockHelper.parseComponents(category['components_json']);
+    final catComps = CategoryStockHelper.getMainComponents(category['components_json']);
 
     final remBreakdown = CategoryStockHelper.computeBreakdownFromPieces(
       workshopPieces,
@@ -1169,7 +1169,7 @@ class _UpholstererScreenState extends State<UpholstererScreen>
       final String catName = (category['name'] ?? '').toString().trim();
       final today = UpholstererStatementHelper.formatIsoDate(DateTime.now());
       final now12 = StockMovementHelper.formatDateTime12(DateTime.now());
-      final catComps = CategoryStockHelper.parseComponents(category['components_json']);
+      final catComps = CategoryStockHelper.getMainComponents(category['components_json']);
 
       final sendBreak = CategoryStockHelper.computeBreakdownFromPieces(
         sentPieces,
@@ -1309,7 +1309,7 @@ class _UpholstererScreenState extends State<UpholstererScreen>
       final int batchId = existingBatch['id'] as int;
       final today = UpholstererStatementHelper.formatIsoDate(DateTime.now());
       final now12 = StockMovementHelper.formatDateTime12(DateTime.now());
-      final catComps = CategoryStockHelper.parseComponents(category['components_json']);
+      final catComps = CategoryStockHelper.getMainComponents(category['components_json']);
 
       final recBreak = CategoryStockHelper.computeBreakdownFromPieces(
         receivedPieces,
@@ -1388,7 +1388,9 @@ class _UpholstererScreenState extends State<UpholstererScreen>
               updatedCatComps.add({'name': pName, 'base_qty': bQ, 'qty': addQ});
             }
           }
-          newStockSets = CategoryStockHelper.computeBreakdownFromPieces(updatedCatComps).completeSets;
+          newStockSets = CategoryStockHelper.computeBreakdownFromPieces(
+            CategoryStockHelper.getMainComponents(updatedCatComps),
+          ).completeSets;
           await txn.update(
             'categories',
             {
@@ -1467,7 +1469,7 @@ class _UpholstererScreenState extends State<UpholstererScreen>
                 final bool isExpanded = _expandedCategoryIds.contains(catId);
                 final batch = _findMergedBatchForCategory(cat);
                 final workshopPieces = _buildCategoryWorkshopPieces(cat, batch);
-                final catComps = CategoryStockHelper.parseComponents(cat['components_json']);
+                final catComps = CategoryStockHelper.getMainComponents(cat['components_json']);
 
                 final sentBreak = CategoryStockHelper.computeBreakdownFromPieces(
                   workshopPieces,
