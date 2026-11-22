@@ -68,7 +68,9 @@ jobs:
           chmod 600 android/key.properties
 
       - name: Build Release APK
-        run: flutter build apk --release
+        env:
+          SUPABASE_KEY: ${{ secrets.SUPABASE_ANON_KEY || vars.SUPABASE_ANON_KEY }}
+        run: flutter build apk --release --dart-define=SUPABASE_ANON_KEY="$SUPABASE_KEY"
 
       - name: Clean Signing Secrets
         if: always()

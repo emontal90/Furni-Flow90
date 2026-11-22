@@ -164,8 +164,8 @@ class CloudBackupItem {
 
 class CloudService {
   static const String defaultSupabaseUrl = 'https://httdsktwfnrkhhlcznzo.supabase.co';
-  static const String defaultAnonKey =
-      'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imh0dGRza3R3Zm5ya2hobGN6bnpvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzIxODk0NDEsImV4cCI6MjA0Nzc2NTQ0MX0.dummy_placeholder_signature';
+  // يتم تمرير المفتاح بشكل آمن أثناء البناء عبر --dart-define دون دمج أو كتابة أي مفتاح في الكود المصدري
+  static const String _compileTimeAnonKey = String.fromEnvironment('SUPABASE_ANON_KEY');
   static const String bucketName = 'furniflow-backups';
   static const String approvedPaymentNumber = '01094085228';
   static const int maxCloudBackups = 5;
@@ -173,11 +173,35 @@ class CloudService {
   static final ValueNotifier<CloudSubscriptionData?> cloudStatusNotifier =
       ValueNotifier<CloudSubscriptionData?>(null);
 
-  /// استرجاع مفتاح Anon Key المخزن أو الافتراضي
+  /// استرجاع مفتاح Anon Key بأعلى معايير الأمان دون كتابة أي مفتاح صريح في الكود
   static Future<String> getAnonKey() async {
+    // 1. قراءة المفتاح المحقون أثناء البناء من GitHub Actions عبر --dart-define
+    if (_compileTimeAnonKey.isNotEmpty) {
+      return _compileTimeAnonKey;
+    }
+
+    // 2. قراءة المفتاح من المخزن الأمني المشفر محلياً
     final custom = await SecurityStorageService.getString('supabase_anon_key');
     if (custom != null && custom.trim().isNotEmpty) return custom.trim();
-    return defaultAnonKey;
+
+    // 3. أثناء التطوير المحلي: قراءة المفتاح من الملف المستثنى تماماً في .gitignore
+    if (!kIsWeb) {
+      try {
+        final localConfigFile = File('portal/config.js');
+        if (await localConfigFile.exists()) {
+          final content = await localConfigFile.readAsString();
+          final match = RegExp(r'SUPABASE_ANON_KEY:\s*["\x27]([^"\x27]+)["\x27]').firstMatch(content);
+          if (match != null && match.group(1) != null) {
+            final key = match.group(1)!.trim();
+            if (key.isNotEmpty && !key.startsWith('PASTE_')) {
+              return key;
+            }
+          }
+        }
+      } catch (_) {}
+    }
+
+    return '';
   }
 
   /// تعيين مفتاح Anon Key مخصص
