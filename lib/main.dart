@@ -11,6 +11,7 @@ import 'core/license_service.dart';
 import 'core/platform_init.dart';
 import 'core/security_storage_service.dart';
 import 'screens/auth_screen.dart';
+import 'screens/license_lock_screen.dart';
 import 'screens/main_nav_screen.dart';
 
 void main() async {
@@ -88,9 +89,17 @@ class FurnitureApp extends StatelessWidget {
                   ),
                 );
               },
-              home: initialBiometricEnabled
-                  ? const AuthScreen()
-                  : const MainNavigationScreen(),
+              home: ValueListenableBuilder<LicenseInfo?>(
+                valueListenable: LicenseService.statusNotifier,
+                builder: (context, license, _) {
+                  if (license != null && !license.isUsable) {
+                    return LicenseLockScreen(info: license);
+                  }
+                  return initialBiometricEnabled
+                      ? const AuthScreen()
+                      : const MainNavigationScreen();
+                },
+              ),
             );
           },
         );

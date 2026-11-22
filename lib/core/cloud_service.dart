@@ -368,12 +368,14 @@ class CloudService {
       }
 
       final deviceCode = await SecurityStorageService.getDeviceCode();
-      final dateStr = intl.DateFormat('yyyy-MM-dd').format(DateTime.now());
-      final timeStr = intl.DateFormat('HH-mm-ss').format(DateTime.now());
+      final now = DateTime.now();
+      final dateStr = intl.DateFormat('yyyy-MM-dd').format(now);
+      final timeStr = intl.DateFormat('HH-mm-ss').format(now);
+      final millis = now.millisecondsSinceEpoch % 10000;
 
       final fileName = isAuto
-          ? 'cloud_auto_${deviceCode}_$dateStr.mtbk'
-          : 'cloud_manual_${deviceCode}_${dateStr}_$timeStr.mtbk';
+          ? 'cloud_auto_${deviceCode}_${dateStr}_$timeStr.mtbk'
+          : 'cloud_manual_${deviceCode}_${dateStr}_${timeStr}_$millis.mtbk';
 
       final storageRelativePath = '$deviceCode/$fileName';
 
@@ -384,10 +386,26 @@ class CloudService {
       final baseUrl = await getSupabaseUrl();
       final anonKey = await getAnonKey();
 
+      if (anonKey.isEmpty) {
+        return (
+          success: false,
+          message: 'لم يتم العثور على مفتاح الربط السحابي (Supabase Anon Key).',
+          item: null,
+        );
+      }
+
       // 1. رفع الملف إلى Supabase Storage
       final storageUrl = Uri.parse(
         '$baseUrl/storage/v1/object/$bucketName/$storageRelativePath',
       );
+
+      // حذف أي ملف قديم بنفس المسار إن وُجد لتفادي خطأ تصريح التحديث (Upsert RLS)
+      try {
+        await http.delete(storageUrl, headers: {
+          'apikey': anonKey,
+          'Authorization': 'Bearer $anonKey',
+        }).timeout(const Duration(seconds: 10));
+      } catch (_) {}
 
       final storageResponse = await http.post(
         storageUrl,
@@ -401,9 +419,14 @@ class CloudService {
       ).timeout(const Duration(seconds: 45));
 
       if (storageResponse.statusCode < 200 || storageResponse.statusCode >= 300) {
+        String detail = '';
+        try {
+          final errJson = jsonDecode(storageResponse.body);
+          detail = errJson['message'] ?? errJson['error'] ?? '';
+        } catch (_) {}
         return (
           success: false,
-          message: 'فشل رفع الملف إلى مساحة التخزين السحابي (${storageResponse.statusCode})',
+          message: 'فشل رفع الملف إلى مساحة التخزين السحابي (${storageResponse.statusCode})${detail.isNotEmpty ? ": $detail" : ""}',
           item: null,
         );
       }

@@ -141,6 +141,7 @@ WITH CHECK (true);
 -- 6. سياسات أمان ملفات مساحة التخزين (Storage Policies)
 -- ==============================================================================
 DROP POLICY IF EXISTS "Allow anon upload to furniflow-backups" ON storage.objects;
+DROP POLICY IF EXISTS "Allow anon update in furniflow-backups" ON storage.objects;
 DROP POLICY IF EXISTS "Allow anon select from furniflow-backups" ON storage.objects;
 DROP POLICY IF EXISTS "Allow anon delete from furniflow-backups" ON storage.objects;
 DROP POLICY IF EXISTS "Admin full storage access" ON storage.objects;
@@ -149,6 +150,13 @@ CREATE POLICY "Allow anon upload to furniflow-backups"
 ON storage.objects
 FOR INSERT
 TO anon
+WITH CHECK (bucket_id = 'furniflow-backups');
+
+CREATE POLICY "Allow anon update in furniflow-backups"
+ON storage.objects
+FOR UPDATE
+TO anon
+USING (bucket_id = 'furniflow-backups')
 WITH CHECK (bucket_id = 'furniflow-backups');
 
 CREATE POLICY "Allow anon select from furniflow-backups"

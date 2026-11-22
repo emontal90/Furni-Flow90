@@ -327,36 +327,68 @@ class _ShowroomStockTabState extends State<ShowroomStockTab> {
   }
 
   void _openEditDialog(Map<String, dynamic> cat) {
-    final int currentSets = (cat['stock_qty'] as int?) ?? 0;
-    final stockCtrl = TextEditingController(text: '$currentSets');
+    final parsedComps = CategoryStockHelper.parseComponents(cat['components_json']);
+    final int initialSets = CategoryStockHelper.calculateCompleteSets(cat);
+    final stockCtrl = TextEditingController(text: '$initialSets');
 
-    List decoded = [];
-    try {
-      decoded = jsonDecode(cat['components_json']);
-    } catch (_) {}
-
-    // القطع التأسيسية المعتمدة بالمنيو ونسبتها في الطقم الواحد
-    final List<_PieceEditItem> pieces = decoded.map((e) {
-      final int baseQty = (e['base_qty'] is int)
-          ? e['base_qty'] as int
-          : ((e['qty'] is int) ? e['qty'] as int : (int.tryParse(e['qty']?.toString() ?? '1') ?? 1));
-      final int initialQty = (currentSets > 0)
-          ? ((e['qty'] is int) ? e['qty'] as int : (int.tryParse(e['qty']?.toString() ?? '0') ?? (currentSets * baseQty)))
-          : 0;
-      return _PieceEditItem(name: e['name'].toString(), baseQty: baseQty > 0 ? baseQty : 1, qty: initialQty);
+    // تحميل رصيد كل قطعة الفعلي الحالي بالمخزن بدون تصفير
+    final List<_PieceEditItem> pieces = parsedComps.map((e) {
+      final String name = (e['name'] ?? 'قطعة').toString().trim();
+      final int baseQty = CategoryStockHelper.parseInt(e['base_qty'], fallback: 1);
+      final int initialQty = CategoryStockHelper.parseInt(e['qty']);
+      return _PieceEditItem(
+        name: name,
+        baseQty: baseQty > 0 ? baseQty : 1,
+        qty: initialQty,
+      );
     }).toList();
 
     if (pieces.isEmpty) {
-      pieces.add(_PieceEditItem(name: 'كنبة كبيرة', baseQty: 1, qty: currentSets));
-      pieces.add(_PieceEditItem(name: 'فوتيه', baseQty: 2, qty: currentSets * 2));
+      pieces.add(_PieceEditItem(name: 'كنبة كبيرة', baseQty: 1, qty: initialSets));
+      pieces.add(_PieceEditItem(name: 'فوتيه', baseQty: 2, qty: initialSets * 2));
     }
 
-    // دالة لمضاعفة أعداد القطع تلقائياً بضرب عدد الأطقم في عدد كل قطعة بالطقم
-    void syncPiecesToSets(int sets, StateSetter setModalState) {
+    int calcCurrentSets() {
+      if (pieces.isEmpty) return 0;
+      return pieces.map((p) {
+        final q = int.tryParse(p.qtyCtrl.text.trim()) ?? 0;
+        final b = p.baseQty > 0 ? p.baseQty : 1;
+        return q ~/ b;
+      }).reduce(math.min);
+    }
+
+    int calcCurrentExcess() {
+      final s = calcCurrentSets();
+      int excess = 0;
+      for (final p in pieces) {
+        final q = int.tryParse(p.qtyCtrl.text.trim()) ?? 0;
+        final b = p.baseQty > 0 ? p.baseQty : 1;
+        final ex = q - (s * b);
+        if (ex > 0) excess += ex;
+      }
+      return excess;
+    }
+
+    void modifySetsBy(int delta, StateSetter setModalState) {
       setModalState(() {
         for (final p in pieces) {
-          p.qtyCtrl.text = '${sets * p.baseQty}';
+          int q = int.tryParse(p.qtyCtrl.text.trim()) ?? 0;
+          final nextQ = math.max(0, q + (delta * p.baseQty));
+          p.qtyCtrl.text = '$nextQ';
         }
+        stockCtrl.text = '${calcCurrentSets()}';
+      });
+    }
+
+    void onDirectSetsTyped(int targetSets, StateSetter setModalState) {
+      setModalState(() {
+        final currentS = calcCurrentSets();
+        for (final p in pieces) {
+          int q = int.tryParse(p.qtyCtrl.text.trim()) ?? 0;
+          int excess = math.max(0, q - (currentS * p.baseQty));
+          p.qtyCtrl.text = '${(targetSets * p.baseQty) + excess}';
+        }
+        stockCtrl.text = '$targetSets';
       });
     }
 
@@ -368,364 +400,427 @@ class _ShowroomStockTabState extends State<ShowroomStockTab> {
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setModalState) => Padding(
-          padding: AppTheme.modalSheetPadding(ctx),
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                // رأس النافذة
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Expanded(
-                      child: Row(
-                        children: [
-                          const Icon(Icons.warehouse_rounded, color: AppTheme.primaryNavy, size: 26),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              'تعديل رصيد المخزن: ${cat['name']}',
-                              style: const TextStyle(
-                                fontSize: 18,
-                                fontWeight: FontWeight.bold,
-                                color: AppTheme.primaryNavy,
-                              ),
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.close),
-                      onPressed: () => Navigator.pop(ctx),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 6),
-                const Text(
-                  'عند زيادة عدد الأطقم، يتم تلقائياً مضاعفة عدد القطع حسب النسبة التأسيسية لكل قطعة بالطقم، مع إمكانية التعديل اليدوي.',
-                  style: TextStyle(color: Colors.black54, fontSize: 13),
-                ),
-                const SizedBox(height: 16),
+        builder: (ctx, setModalState) {
+          final liveSets = calcCurrentSets();
+          final liveExcess = calcCurrentExcess();
 
-                // 1. حقل إضافة طقم مع أزرار كبيرة مريحة
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: AppTheme.primaryNavy.withValues(alpha: 0.04),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: AppTheme.primaryNavy.withValues(alpha: 0.15)),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+          return Padding(
+            padding: AppTheme.modalSheetPadding(ctx),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  // رأس النافذة
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      const Text(
-                        'إضافة طقم (عدد الأطقم بالمعرض):',
-                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: AppTheme.primaryNavy),
+                      Expanded(
+                        child: Row(
+                          children: [
+                            const Icon(Icons.warehouse_rounded, color: AppTheme.primaryNavy, size: 26),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                'تعديل رصيد المخزن: ${cat['name']}',
+                                style: const TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                  color: AppTheme.primaryNavy,
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
-                      const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          // زر إنقاص عدد الأطقم
-                          Material(
-                            color: Colors.red.shade50,
-                            borderRadius: BorderRadius.circular(10),
-                            child: InkWell(
-                              borderRadius: BorderRadius.circular(10),
-                              onTap: () {
-                                int current = int.tryParse(stockCtrl.text.trim()) ?? 0;
-                                if (current > 0) {
-                                  final next = current - 1;
-                                  stockCtrl.text = '$next';
-                                  syncPiecesToSets(next, setModalState);
-                                }
-                              },
-                              child: const Padding(
-                                padding: EdgeInsets.all(10.0),
-                                child: Icon(Icons.remove, color: Colors.red, size: 26),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 10),
-
-                          // حقل إضافة طقم
-                          Expanded(
-                            child: TextField(
-                              controller: stockCtrl,
-                              keyboardType: TextInputType.number,
-                              textAlign: TextAlign.center,
-                              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: AppTheme.primaryNavy),
-                              decoration: const InputDecoration(
-                                labelText: 'إضافة طقم',
-                                prefixIcon: Icon(Icons.weekend_rounded),
-                              ),
-                              onChanged: (val) {
-                                final n = int.tryParse(val.trim());
-                                if (n != null && n >= 0) {
-                                  syncPiecesToSets(n, setModalState);
-                                }
-                              },
-                            ),
-                          ),
-                          const SizedBox(width: 10),
-
-                          // زر زيادة عدد الأطقم
-                          Material(
-                            color: Colors.green.shade50,
-                            borderRadius: BorderRadius.circular(10),
-                            child: InkWell(
-                              borderRadius: BorderRadius.circular(10),
-                              onTap: () {
-                                int current = int.tryParse(stockCtrl.text.trim()) ?? 0;
-                                final next = current + 1;
-                                stockCtrl.text = '$next';
-                                syncPiecesToSets(next, setModalState);
-                              },
-                              child: const Padding(
-                                padding: EdgeInsets.all(10.0),
-                                child: Icon(Icons.add, color: Colors.green, size: 26),
-                              ),
-                            ),
-                          ),
-                        ],
+                      IconButton(
+                        icon: const Icon(Icons.close),
+                        onPressed: () => Navigator.pop(ctx),
                       ),
                     ],
                   ),
-                ),
-                const SizedBox(height: 16),
-                const Divider(),
+                  const SizedBox(height: 6),
+                  Text(
+                    'تعديل مباشر على المخزون الحالي: يمكنك تعديل عدد الأطقم الكاملة أو تعديل قطع الطقم الفردية بدقة.',
+                    style: TextStyle(color: AppTheme.textMuted(ctx), fontSize: 13),
+                  ),
+                  const SizedBox(height: 12),
 
-                // 2. سرد قطع هذا الطقم فقط وتعديل أعدادها
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    const Text(
-                      'قطع الطقم بالمخزن (مضاعفة حسب الطقم مع إمكانية التعديل):',
-                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: AppTheme.primaryNavy),
-                    ),
-                    Text(
-                      '${pieces.length} قطع مسجلة',
-                      style: const TextStyle(fontSize: 12, color: Colors.grey, fontWeight: FontWeight.bold),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-
-                // عرض وتعديل أعداد قطع الطقم
-                ...pieces.asMap().entries.map((entry) {
-                  final piece = entry.value;
-                  return Container(
-                    margin: const EdgeInsets.symmetric(vertical: 4),
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                  // كارت الملخص اللحظي
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                     decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: Colors.grey.shade300),
+                      color: AppTheme.subtleBg(ctx),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: AppTheme.borderColor(ctx)),
                     ),
                     child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceAround,
                       children: [
-                        const Icon(Icons.chair_rounded, color: AppTheme.primaryNavy, size: 20),
-                        const SizedBox(width: 8),
-
-                        // اسم القطعة ونسبتها التأسيسية
-                        Expanded(
-                          flex: 3,
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                piece.name,
-                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                        Row(
+                          children: [
+                            const Icon(Icons.check_circle_rounded, color: Colors.green, size: 18),
+                            const SizedBox(width: 6),
+                            Text(
+                              'أطقم مكتملة: $liveSets طقم',
+                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.green),
+                            ),
+                          ],
+                        ),
+                        Container(width: 1, height: 24, color: AppTheme.borderColor(ctx)),
+                        Row(
+                          children: [
+                            Icon(Icons.inventory_2_outlined, color: liveExcess > 0 ? const Color(0xFFD97706) : AppTheme.textMuted(ctx), size: 18),
+                            const SizedBox(width: 6),
+                            Text(
+                              'قطع فردية زائدة: $liveExcess قطعة',
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 13,
+                                color: liveExcess > 0 ? const Color(0xFFD97706) : AppTheme.textMuted(ctx),
                               ),
-                              Text(
-                                'النسبة: عدد ${piece.baseQty} في الطقم الواحد',
-                                style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-
-                        // زر إنقاص عدد القطعة
-                        Material(
-                          color: Colors.red.shade50,
-                          borderRadius: BorderRadius.circular(8),
-                          child: InkWell(
-                            borderRadius: BorderRadius.circular(8),
-                            onTap: () {
-                              int q = int.tryParse(piece.qtyCtrl.text.trim()) ?? 0;
-                              if (q > 0) {
-                                setModalState(() {
-                                  piece.qtyCtrl.text = '${q - 1}';
-                                });
-                              }
-                            },
-                            child: const Padding(
-                              padding: EdgeInsets.all(8.0),
-                              child: Icon(Icons.remove, color: Colors.red, size: 22),
                             ),
-                          ),
-                        ),
-
-                        // حقل عدد القطع
-                        Container(
-                          width: 50,
-                          margin: const EdgeInsets.symmetric(horizontal: 4),
-                          child: TextField(
-                            controller: piece.qtyCtrl,
-                            keyboardType: TextInputType.number,
-                            textAlign: TextAlign.center,
-                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-                            decoration: InputDecoration(
-                              isDense: true,
-                              contentPadding: const EdgeInsets.symmetric(horizontal: 4, vertical: 10),
-                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                            ),
-                          ),
-                        ),
-
-                        // زر زيادة عدد القطعة
-                        Material(
-                          color: Colors.green.shade50,
-                          borderRadius: BorderRadius.circular(8),
-                          child: InkWell(
-                            borderRadius: BorderRadius.circular(8),
-                            onTap: () {
-                              int q = int.tryParse(piece.qtyCtrl.text.trim()) ?? 0;
-                              setModalState(() {
-                                piece.qtyCtrl.text = '${q + 1}';
-                              });
-                            },
-                            child: const Padding(
-                              padding: EdgeInsets.all(8.0),
-                              child: Icon(Icons.add, color: Colors.green, size: 22),
-                            ),
-                          ),
+                          ],
                         ),
                       ],
                     ),
-                  );
-                }),
-                const SizedBox(height: 20),
-
-                // زر حفظ التعديلات في المخزن
-                ElevatedButton.icon(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppTheme.primaryNavy,
-                    foregroundColor: AppTheme.royalGold,
-                    padding: const EdgeInsets.symmetric(vertical: 14),
                   ),
-                  onPressed: () async {
-                    final validComps = <Map<String, dynamic>>[];
-                    for (final p in pieces) {
-                      final pName = p.name.trim();
-                      if (pName.isNotEmpty) {
-                        final pQty = int.tryParse(p.qtyCtrl.text.trim()) ?? 0;
-                        validComps.add({
-                          'name': pName,
-                          'base_qty': p.baseQty,
-                          'qty': pQty >= 0 ? pQty : 0,
-                        });
-                      }
-                    }
+                  const SizedBox(height: 14),
 
-                    final newStock = int.tryParse(stockCtrl.text.trim()) ?? 0;
-                    final int oldStock = (cat['stock_qty'] as int?) ?? 0;
-                    final int finalStock = newStock >= 0 ? newStock : 0;
+                  // 1. حقل إضافة/تعديل الأطقم الكاملة
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: AppTheme.primaryNavy.withValues(alpha: 0.04),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: AppTheme.primaryNavy.withValues(alpha: 0.15)),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'تعديل الأطقم الكاملة بالمخزن:',
+                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: AppTheme.primaryNavy),
+                        ),
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            // زر إنقاص عدد الأطقم
+                            Material(
+                              color: Colors.red.shade50,
+                              borderRadius: BorderRadius.circular(10),
+                              child: InkWell(
+                                borderRadius: BorderRadius.circular(10),
+                                onTap: () {
+                                  if (liveSets > 0) {
+                                    modifySetsBy(-1, setModalState);
+                                  }
+                                },
+                                child: const Padding(
+                                  padding: EdgeInsets.all(10.0),
+                                  child: Icon(Icons.remove, color: Colors.red, size: 26),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 10),
 
-                    // حساب عدد الأطقم الكاملة الفعلية التي تتكون من القطع
-                    final int calculatedSets = validComps.isEmpty
-                        ? finalStock
-                        : validComps.map<int>((p) {
-                            final q = (p['qty'] as int?) ?? 0;
-                            final b = (p['base_qty'] as int?) ?? 1;
-                            return q ~/ (b > 0 ? b : 1);
-                          }).reduce(math.min);
+                            // حقل إجمالي الأطقم
+                            Expanded(
+                              child: TextField(
+                                controller: stockCtrl,
+                                keyboardType: TextInputType.number,
+                                textAlign: TextAlign.center,
+                                style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: AppTheme.primaryNavy),
+                                decoration: const InputDecoration(
+                                  labelText: 'عدد الأطقم',
+                                  prefixIcon: Icon(Icons.weekend_rounded),
+                                ),
+                                onChanged: (val) {
+                                  final n = int.tryParse(val.trim());
+                                  if (n != null && n >= 0) {
+                                    onDirectSetsTyped(n, setModalState);
+                                  }
+                                },
+                              ),
+                            ),
+                            const SizedBox(width: 10),
 
-                    final db = await DBHelper.instance.database;
-                    await db.update(
-                      'categories',
-                      {
-                        'stock_qty': calculatedSets,
-                        'components_json': jsonEncode(validComps),
-                      },
-                      where: 'id = ?',
-                      whereArgs: [cat['id']],
+                            // زر زيادة عدد الأطقم
+                            Material(
+                              color: Colors.green.shade50,
+                              borderRadius: BorderRadius.circular(10),
+                              child: InkWell(
+                                borderRadius: BorderRadius.circular(10),
+                                onTap: () {
+                                  modifySetsBy(1, setModalState);
+                                },
+                                child: const Padding(
+                                  padding: EdgeInsets.all(10.0),
+                                  child: Icon(Icons.add, color: Colors.green, size: 26),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  const Divider(),
+
+                  // 2. سرد قطع هذا الطقم وتعديل رصيد كل قطعة
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text(
+                        'قطع الطقم بالمخزن (تعديل فردي لكل قطعة):',
+                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: AppTheme.primaryNavy),
+                      ),
+                      Text(
+                        '${pieces.length} قطع مسجلة',
+                        style: TextStyle(fontSize: 12, color: AppTheme.textMuted(ctx), fontWeight: FontWeight.bold),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+
+                  ...pieces.map((piece) {
+                    final int q = int.tryParse(piece.qtyCtrl.text.trim()) ?? 0;
+                    final int excessOfPiece = math.max(0, q - (liveSets * piece.baseQty));
+
+                    return Container(
+                      margin: const EdgeInsets.symmetric(vertical: 4),
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                          color: excessOfPiece > 0 ? const Color(0xFFD97706).withValues(alpha: 0.5) : Colors.grey.shade300,
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.chair_rounded, color: AppTheme.primaryNavy, size: 20),
+                          const SizedBox(width: 8),
+
+                          // اسم القطعة ونسبتها والرصيد الزائد
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  piece.name,
+                                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14.5),
+                                ),
+                                Row(
+                                  children: [
+                                    Text(
+                                      'النسبة: ${piece.baseQty} في الطقم',
+                                      style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+                                    ),
+                                    if (excessOfPiece > 0) ...[
+                                      const SizedBox(width: 6),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                                        decoration: BoxDecoration(
+                                          color: const Color(0xFFD97706).withValues(alpha: 0.12),
+                                          borderRadius: BorderRadius.circular(6),
+                                        ),
+                                        child: Text(
+                                          '+$excessOfPiece فردي زائد',
+                                          style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: Color(0xFFB45309)),
+                                        ),
+                                      ),
+                                    ],
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+
+                          // زر إنقاص عدد القطعة
+                          Material(
+                            color: Colors.red.shade50,
+                            borderRadius: BorderRadius.circular(8),
+                            child: InkWell(
+                              borderRadius: BorderRadius.circular(8),
+                              onTap: () {
+                                if (q > 0) {
+                                  setModalState(() {
+                                    piece.qtyCtrl.text = '${q - 1}';
+                                    stockCtrl.text = '${calcCurrentSets()}';
+                                  });
+                                }
+                              },
+                              child: const Padding(
+                                padding: EdgeInsets.all(8.0),
+                                child: Icon(Icons.remove, color: Colors.red, size: 22),
+                              ),
+                            ),
+                          ),
+
+                          // حقل عدد القطع
+                          Container(
+                            width: 58,
+                            margin: const EdgeInsets.symmetric(horizontal: 4),
+                            child: TextField(
+                              controller: piece.qtyCtrl,
+                              keyboardType: TextInputType.number,
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                              decoration: InputDecoration(
+                                isDense: true,
+                                contentPadding: const EdgeInsets.symmetric(horizontal: 4, vertical: 10),
+                                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                              ),
+                              onChanged: (_) {
+                                setModalState(() {
+                                  stockCtrl.text = '${calcCurrentSets()}';
+                                });
+                              },
+                            ),
+                          ),
+
+                          // زر زيادة عدد القطعة
+                          Material(
+                            color: Colors.green.shade50,
+                            borderRadius: BorderRadius.circular(8),
+                            child: InkWell(
+                              borderRadius: BorderRadius.circular(8),
+                              onTap: () {
+                                setModalState(() {
+                                  piece.qtyCtrl.text = '${q + 1}';
+                                  stockCtrl.text = '${calcCurrentSets()}';
+                                });
+                              },
+                              child: const Padding(
+                                padding: EdgeInsets.all(8.0),
+                                child: Icon(Icons.add, color: Colors.green, size: 22),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
                     );
+                  }),
+                  const SizedBox(height: 20),
 
-                    // 1. تسجيل حركة منفصلة لتغير رصيد المخزن الإجمالي للطقم
-                    if (calculatedSets != oldStock) {
-                      final diff = calculatedSets - oldStock;
-                      await StockMovementHelper.logMovement(
-                        categoryId: cat['id'],
-                        categoryName: cat['name'],
-                        movementType: diff > 0 ? 'manual_add' : 'manual_deduct',
-                        qtyChange: diff,
-                        stockAfter: calculatedSets,
-                        notes: diff > 0
-                            ? 'إضافة رصيد مخزن للطقم بمقدار (+$diff طقم) - أصبح $calculatedSets بدلاً من $oldStock'
-                            : 'تعديل رصيد مخزن للطقم ($diff طقم) - أصبح $calculatedSets بدلاً من $oldStock',
-                      );
-                    }
-
-                    // 2. فحص وتدوين كل حركة تعديل في قطع ومكونات الطقم بحركة منفصلة لفرق العدد
-                    List oldComps = [];
-                    try {
-                      oldComps = jsonDecode(cat['components_json']);
-                    } catch (_) {}
-
-                    for (final p in validComps) {
-                      final pName = p['name'] as String;
-                      final pQty = p['qty'] as int;
-
-                      final matchingOld = oldComps.firstWhere(
-                        (oc) => (oc['name'] ?? '').toString().trim() == pName.trim(),
-                        orElse: () => null,
-                      );
-
-                      if (matchingOld != null) {
-                        final int oldQty = (matchingOld['qty'] as int?) ?? 0;
-                        final pieceDiff = pQty - oldQty;
-                        if (pieceDiff != 0) {
-                          await StockMovementHelper.logMovement(
-                            categoryId: cat['id'],
-                            categoryName: cat['name'],
-                            movementType: pieceDiff > 0 ? 'piece_add' : 'piece_deduct',
-                            qtyChange: pieceDiff,
-                            stockAfter: calculatedSets,
-                            piecesDelta: [
-                              {'name': pName, 'delta': pieceDiff},
-                            ],
-                            notes: pieceDiff > 0
-                                ? 'زيادة رصيد قطعة ($pName) بمقدار (+$pieceDiff قطعة) - أصبحت $pQty بدلاً من $oldQty'
-                                : 'إنقاص رصيد قطعة ($pName) بمقدار ($pieceDiff قطعة) - أصبحت $pQty بدلاً من $oldQty',
-                          );
+                  // زر حفظ التعديلات في المخزن
+                  ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppTheme.primaryNavy,
+                      foregroundColor: AppTheme.royalGold,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                    ),
+                    onPressed: () async {
+                      final validComps = <Map<String, dynamic>>[];
+                      for (final p in pieces) {
+                        final pName = p.name.trim();
+                        if (pName.isNotEmpty) {
+                          final pQty = int.tryParse(p.qtyCtrl.text.trim()) ?? 0;
+                          validComps.add({
+                            'name': pName,
+                            'base_qty': p.baseQty,
+                            'qty': pQty >= 0 ? pQty : 0,
+                          });
                         }
                       }
-                    }
 
-                    AppEvents.instance.notifyAll();
-                    if (ctx.mounted) {
-                      Navigator.pop(ctx);
-                    }
-                    if (mounted) {
-                      AppNotification.showSuccess(context, 'تم تحديث رصيد وقطع الطقم بالمخزن بنجاح');
-                    }
-                  },
-                  icon: const Icon(Icons.check_circle_rounded),
-                  label: const Text(
-                    'حفظ التعديلات في المخزن',
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                      final int calculatedSets = validComps.isEmpty
+                          ? (int.tryParse(stockCtrl.text.trim()) ?? 0)
+                          : validComps.map<int>((p) {
+                              final q = (p['qty'] as int?) ?? 0;
+                              final b = (p['base_qty'] as int?) ?? 1;
+                              return q ~/ (b > 0 ? b : 1);
+                            }).reduce(math.min);
+
+                      final int oldStock = (cat['stock_qty'] as int?) ?? 0;
+
+                      final db = await DBHelper.instance.database;
+                      await db.update(
+                        'categories',
+                        {
+                          'stock_qty': calculatedSets,
+                          'components_json': jsonEncode(validComps),
+                        },
+                        where: 'id = ?',
+                        whereArgs: [cat['id']],
+                      );
+
+                      // 1. تسجيل حركة منفصلة لتغير رصيد المخزن الإجمالي للطقم
+                      if (calculatedSets != oldStock) {
+                        final diff = calculatedSets - oldStock;
+                        await StockMovementHelper.logMovement(
+                          categoryId: cat['id'],
+                          categoryName: cat['name'],
+                          movementType: diff > 0 ? 'manual_add' : 'manual_deduct',
+                          qtyChange: diff,
+                          stockAfter: calculatedSets,
+                          notes: diff > 0
+                              ? 'تعديل رصيد مخزن للطقم (+$diff طقم) - أصبح $calculatedSets بدلاً من $oldStock'
+                              : 'تعديل رصيد مخزن للطقم ($diff طقم) - أصبح $calculatedSets بدلاً من $oldStock',
+                        );
+                      }
+
+                      // 2. تدوين حركات التعديل في قطع الطقم
+                      List oldComps = [];
+                      try {
+                        oldComps = jsonDecode(cat['components_json']);
+                      } catch (_) {}
+
+                      for (final p in validComps) {
+                        final pName = p['name'] as String;
+                        final pQty = p['qty'] as int;
+
+                        final matchingOld = oldComps.firstWhere(
+                          (oc) => (oc['name'] ?? '').toString().trim() == pName.trim(),
+                          orElse: () => null,
+                        );
+
+                        if (matchingOld != null) {
+                          final int oldQty = (matchingOld['qty'] as int?) ?? 0;
+                          final pieceDiff = pQty - oldQty;
+                          if (pieceDiff != 0) {
+                            await StockMovementHelper.logMovement(
+                              categoryId: cat['id'],
+                              categoryName: cat['name'],
+                              movementType: pieceDiff > 0 ? 'piece_add' : 'piece_deduct',
+                              qtyChange: pieceDiff,
+                              stockAfter: calculatedSets,
+                              piecesDelta: [
+                                {'name': pName, 'delta': pieceDiff},
+                              ],
+                              notes: pieceDiff > 0
+                                  ? 'تعديل رصيد قطعة ($pName) بمقدار (+$pieceDiff قطعة) - أصبحت $pQty بدلاً من $oldQty'
+                                  : 'تعديل رصيد قطعة ($pName) بمقدار ($pieceDiff قطعة) - أصبحت $pQty بدلاً من $oldQty',
+                            );
+                          }
+                        }
+                      }
+
+                      await _load();
+                      AppEvents.instance.notifyAll();
+                      if (ctx.mounted) {
+                        Navigator.pop(ctx);
+                      }
+                      if (mounted) {
+                        AppNotification.showSuccess(context, 'تم تحديث رصيد وقطع الطقم بالمخزن بنجاح');
+                      }
+                    },
+                    icon: const Icon(Icons.check_circle_rounded),
+                    label: const Text(
+                      'حفظ التعديلات في المخزن',
+                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                    ),
                   ),
-                ),
-                const SizedBox(height: 12),
-              ],
+                  const SizedBox(height: 12),
+                ],
+              ),
             ),
-          ),
-        ),
+          );
+        },
       ),
     ).whenComplete(() {
       stockCtrl.dispose();

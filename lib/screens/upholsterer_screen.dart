@@ -1677,6 +1677,32 @@ class _UpholstererScreenState extends State<UpholstererScreen>
                               ),
                               const SizedBox(width: 2),
 
+                              // زر القلم لتعديل المدخلات (يظهر عند توسع الكارد)
+                              if (isExpanded) ...[
+                                IconButton(
+                                  padding: EdgeInsets.zero,
+                                  constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                                  tooltip: isReceiveTab ? 'تعديل مدخلات الاستلام' : 'تعديل مدخلات التسليم',
+                                  icon: Container(
+                                    padding: const EdgeInsets.all(5),
+                                    decoration: BoxDecoration(
+                                      color: (isReceiveTab ? Colors.green : AppTheme.primaryNavy).withValues(alpha: 0.12),
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: Icon(
+                                      Icons.edit_rounded,
+                                      color: isReceiveTab ? Colors.green.shade700 : AppTheme.primaryNavy,
+                                      size: 18,
+                                    ),
+                                  ),
+                                  onPressed: () => _openActionModal(
+                                    category: cat,
+                                    isReceive: isReceiveTab,
+                                  ),
+                                ),
+                                const SizedBox(width: 2),
+                              ],
+
                               // 5. سهم التوسيع لعرض ملخص التسليم لهذا الطقم
                               IconButton(
                                 padding: EdgeInsets.zero,
@@ -1783,6 +1809,27 @@ class _UpholstererScreenState extends State<UpholstererScreen>
                                   ),
                                 );
                               }).toList(),
+                            ),
+                            const SizedBox(height: 10),
+                            SizedBox(
+                              width: double.infinity,
+                              child: ElevatedButton.icon(
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: isReceiveTab ? Colors.green.shade700 : AppTheme.primaryNavy,
+                                  foregroundColor: isReceiveTab ? Colors.white : AppTheme.royalGold,
+                                  padding: const EdgeInsets.symmetric(vertical: 9, horizontal: 12),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                ),
+                                icon: const Icon(Icons.edit_rounded, size: 17),
+                                label: Text(
+                                  isReceiveTab ? 'تعديل مدخلات الاستلام لهذا الطقم' : 'تعديل مدخلات التسليم لهذا الطقم',
+                                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12.5),
+                                ),
+                                onPressed: () => _openActionModal(
+                                  category: cat,
+                                  isReceive: isReceiveTab,
+                                ),
+                              ),
                             ),
                           ],
                         ],

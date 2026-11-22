@@ -1,5 +1,8 @@
 import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/foundation.dart';
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
 import 'backup_crypto.dart';
 import 'security_storage_service.dart';
 
@@ -12,6 +15,7 @@ class LicenseInfo {
   final DateTime? expiresAt;
   final int trialDaysRemaining;
   final bool isPermanent;
+  final bool isClockTampered;
 
   const LicenseInfo({
     required this.state,
@@ -20,10 +24,13 @@ class LicenseInfo {
     this.expiresAt,
     this.trialDaysRemaining = 0,
     this.isPermanent = false,
+    this.isClockTampered = false,
   });
 
-  bool get isActivated => state == LicenseState.activated;
-  bool get isUsable => state == LicenseState.activated || state == LicenseState.trial;
+  bool get isActivated => state == LicenseState.activated && !isClockTampered;
+  bool get isUsable =>
+      (state == LicenseState.activated || state == LicenseState.trial) &&
+      !isClockTampered;
 
   /// حساب عدد الأيام المتبقية في الاشتراك بدقة
   int get daysRemaining {
@@ -55,6 +62,112 @@ class LicenseService {
       Uint8List.fromList(utf8.encode(payload)),
     );
     return BackupCrypto.toHexUpper(mac).substring(0, 8);
+  }
+
+  /// مسار ملف تثبيت التجربة المجانية خارج مجلد التطبيق القابل للحذف
+  static Future<File?> _getPersistentAnchorFile() async {
+    if (kIsWeb) return null;
+    try {
+      if (Platform.isWindows) {
+        final profile = Platform.environment['USERPROFILE'];
+        if (profile != null && profile.isNotEmpty) {
+          return File(p.join(profile, '.furniflow_trial_anchor'));
+        }
+      }
+      final dir = await getApplicationSupportDirectory();
+      return File(p.join(dir.path, '.furniflow_trial_anchor'));
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// قراءة أو تهيئة تاريخ بدء التجربة المجانية مع التوقيع الرياضي لمنع التلاعب
+  static Future<DateTime> _resolveFirstRunDate(String deviceCode) async {
+    int? earliestMs;
+
+    // 1. فحص المخزن الأمني الداخلي
+    final storedAnchor = await SecurityStorageService.getString('trial_anchor');
+    if (storedAnchor != null && storedAnchor.contains('|')) {
+      final parts = storedAnchor.split('|');
+      final ms = int.tryParse(parts[0]);
+      if (ms != null && parts.length > 1) {
+        final expectedSig = _computeSignature(deviceCode, 'TRIAL:$ms');
+        if (parts[1] == expectedSig) {
+          earliestMs = ms;
+        }
+      }
+    }
+
+    // 2. فحص الملف المستقل الثابت في نظام التشغيل (يصمد ضد مسح التطبيق بالكامل)
+    final anchorFile = await _getPersistentAnchorFile();
+    if (anchorFile != null && await anchorFile.exists()) {
+      try {
+        final raw = (await anchorFile.readAsString()).trim();
+        if (raw.contains('|')) {
+          final parts = raw.split('|');
+          final ms = int.tryParse(parts[0]);
+          if (ms != null && parts.length > 1) {
+            final expectedSig = _computeSignature(deviceCode, 'TRIAL:$ms');
+            if (parts[1] == expectedSig) {
+              if (earliestMs == null || ms < earliestMs) {
+                earliestMs = ms;
+              }
+            }
+          }
+        }
+      } catch (_) {}
+    }
+
+    // 3. التوافق العكسي مع القيمة القديمة إن وجدت
+    if (earliestMs == null) {
+      final oldIso = await SecurityStorageService.getString('first_run_iso');
+      if (oldIso != null) {
+        final parsed = DateTime.tryParse(oldIso);
+        if (parsed != null) {
+          earliestMs = parsed.millisecondsSinceEpoch;
+        }
+      }
+    }
+
+    // 4. إذا كان تشغيلاً لأول مرة على الإطلاق: تسجيل وتثبيت التوقيع المشفر
+    earliestMs ??= DateTime.now().millisecondsSinceEpoch;
+
+    final sig = _computeSignature(deviceCode, 'TRIAL:$earliestMs');
+    final anchorData = '$earliestMs|$sig';
+
+    await SecurityStorageService.setString('trial_anchor', anchorData);
+    if (anchorFile != null) {
+      try {
+        await anchorFile.writeAsString(anchorData, flush: true);
+      } catch (_) {}
+    }
+
+    return DateTime.fromMillisecondsSinceEpoch(earliestMs);
+  }
+
+  /// التحقق من سلامة ساعة النظام ومنع تقديم أو تأخير الوقت لتجاوز الفترة التجريبية
+  static Future<bool> _verifySystemClock(String deviceCode) async {
+    final nowMs = DateTime.now().millisecondsSinceEpoch;
+    final stored = await SecurityStorageService.getString('last_verified_clock');
+
+    if (stored != null && stored.contains('|')) {
+      final parts = stored.split('|');
+      final lastMs = int.tryParse(parts[0]);
+      if (lastMs != null && parts.length > 1) {
+        final expectedSig = _computeSignature(deviceCode, 'CLOCK:$lastMs');
+        if (parts[1] == expectedSig) {
+          // إذا كان الوقت الحالي أقل من آخر وقت مسجل بأكثر من 5 دقائق: تلاعب بساعة النظام
+          if (nowMs < (lastMs - 300000)) {
+            return false;
+          }
+        }
+      }
+    }
+
+    // تحديث الطابع الزمني الموثق
+    final sig = _computeSignature(deviceCode, 'CLOCK:$nowMs');
+    await SecurityStorageService.setString('last_verified_clock', '$nowMs|$sig');
+    return true;
   }
 
   /// توليد مفتاح ترخيص صالح (للاختبارات أو التوليد الداخلي)
@@ -106,9 +219,21 @@ class LicenseService {
     return (valid: true, isPermanent: false, expiresAt: expiryDate, error: null);
   }
 
-  /// فحص حالة الترخيص الحالية وتحديث الـ Notifier
+  /// فحص حالة الترخيص الحالية وتحديث الـ Notifier (يعمل أوفلاين 100% وبأعلى سرعة وأمان)
   static Future<LicenseInfo> checkStatus() async {
     final deviceCode = await SecurityStorageService.getDeviceCode();
+    final clockValid = await _verifySystemClock(deviceCode);
+
+    if (!clockValid) {
+      final info = LicenseInfo(
+        state: LicenseState.expired,
+        deviceCode: deviceCode,
+        isClockTampered: true,
+      );
+      statusNotifier.value = info;
+      return info;
+    }
+
     final storedKey = await SecurityStorageService.getString('license_key');
 
     if (storedKey != null && storedKey.trim().isNotEmpty) {
@@ -126,24 +251,19 @@ class LicenseService {
       }
     }
 
-    // حساب الفترة التجريبية من أول تشغيل
-    final firstRunRaw = await SecurityStorageService.getString('first_run_iso');
-    DateTime firstRun;
-    if (firstRunRaw != null && DateTime.tryParse(firstRunRaw) != null) {
-      firstRun = DateTime.parse(firstRunRaw);
-    } else {
-      firstRun = DateTime.now();
-      await SecurityStorageService.setString('first_run_iso', firstRun.toIso8601String());
-    }
-
-    final elapsedDays = DateTime.now().difference(firstRun).inDays;
-    final remaining = defaultTrialDays - elapsedDays;
+    // حساب الفترة التجريبية الموثقة برقم العتاد الثابت (30 يوماً من أول تشغيل غير قابلة للتجديد)
+    final firstRun = await _resolveFirstRunDate(deviceCode);
+    final now = DateTime.now();
+    final expiryDate = firstRun.add(const Duration(days: defaultTrialDays));
+    final diff = expiryDate.difference(now);
+    final remainingDays = diff.inDays > 0 ? diff.inDays : (diff.inSeconds > 0 ? 1 : 0);
+    final isTrialActive = now.isBefore(expiryDate) && remainingDays > 0;
 
     final info = LicenseInfo(
-      state: remaining > 0 ? LicenseState.trial : LicenseState.expired,
+      state: isTrialActive ? LicenseState.trial : LicenseState.expired,
       deviceCode: deviceCode,
-      trialDaysRemaining: remaining > 0 ? remaining : 0,
-      expiresAt: firstRun.add(const Duration(days: defaultTrialDays)),
+      trialDaysRemaining: remainingDays,
+      expiresAt: expiryDate,
     );
     statusNotifier.value = info;
     return info;

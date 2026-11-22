@@ -359,101 +359,6 @@ class _GeneralSettingsTabState extends State<_GeneralSettingsTab> {
     }
   }
 
-  Future<void> _openLicenseActivationDialog() async {
-    final keyCtrl = TextEditingController();
-    final deviceCode = _licenseInfo?.deviceCode ?? '';
-
-    await showDialog<void>(
-      context: context,
-      builder: (dCtx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-        title: Row(
-          children: [
-            Icon(Icons.verified_user_rounded, color: AppTheme.accentOnSurface(dCtx)),
-            const SizedBox(width: 8),
-            const Text('تفعيل النسخة التجارية', style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text(
-              'أرسل معرف الجهاز التالي للدعم الفني للحصول على كود التفعيل الخاص بهذا الجهاز:',
-              style: TextStyle(fontSize: 12.5, color: AppTheme.textMuted(dCtx)),
-            ),
-            const SizedBox(height: 8),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-              decoration: BoxDecoration(
-                color: AppTheme.subtleBg(dCtx),
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: AppTheme.borderColor(dCtx)),
-              ),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: SelectableText(
-                      deviceCode,
-                      style: TextStyle(
-                        fontWeight: FontWeight.w900,
-                        fontSize: 14,
-                        color: AppTheme.textPrimary(dCtx),
-                      ),
-                    ),
-                  ),
-                  IconButton(
-                    tooltip: 'نسخ معرف الجهاز',
-                    icon: const Icon(Icons.copy_rounded, size: 18),
-                    onPressed: () {
-                      Clipboard.setData(ClipboardData(text: deviceCode));
-                      AppNotification.showSuccess(context, 'تم نسخ معرف الجهاز');
-                    },
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: keyCtrl,
-              textDirection: TextDirection.ltr,
-              decoration: const InputDecoration(
-                labelText: 'كود التفعيل التجاري',
-                hintText: 'MTK-PERM-XXXXXXXX',
-                prefixIcon: Icon(Icons.vpn_key_rounded),
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dCtx),
-            child: const Text('إلغاء'),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppTheme.primaryNavy,
-              foregroundColor: AppTheme.royalGold,
-            ),
-            onPressed: () async {
-              final err = await LicenseService.activateWithKey(keyCtrl.text);
-              if (err != null) {
-                if (mounted) AppNotification.showError(context, err);
-                return;
-              }
-              await _loadSettings();
-              if (dCtx.mounted) Navigator.pop(dCtx);
-              if (mounted) {
-                AppNotification.showSuccess(context, 'تم تفعيل النسخة التجارية بنجاح!');
-              }
-            },
-            child: const Text('تفعيل الآن', style: TextStyle(fontWeight: FontWeight.bold)),
-          ),
-        ],
-      ),
-    ).whenComplete(() => keyCtrl.dispose());
-  }
-
   Future<void> _checkForUpdatesManually() async {
     if (_isCheckingUpdate) return;
     setState(() => _isCheckingUpdate = true);
@@ -1041,43 +946,34 @@ class _GeneralSettingsTabState extends State<_GeneralSettingsTab> {
                         ),
                       ),
                     const SizedBox(height: 10),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: ElevatedButton.icon(
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: AppTheme.primaryNavy,
-                              foregroundColor: AppTheme.royalGold,
-                              padding: const EdgeInsets.symmetric(vertical: 12),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                            ),
-                            onPressed: () async {
-                              final updated = await Navigator.push<bool>(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (_) => SubscriptionScreen(
-                                    deviceCode: _licenseInfo!.deviceCode,
-                                  ),
-                                ),
-                              );
-                              if (updated == true || mounted) {
-                                await _loadSettings();
-                              }
-                            },
-                            icon: const Icon(Icons.star_rounded, size: 20),
-                            label: Text(
-                              _licenseInfo!.isActivated ? 'تجديد / ترقية الاشتراك' : 'اشترك الآن',
-                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-                            ),
-                          ),
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppTheme.primaryNavy,
+                          foregroundColor: AppTheme.royalGold,
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                         ),
-                        const SizedBox(width: 8),
-                        IconButton.outlined(
-                          tooltip: 'إدخال كود تفعيل تجاري يدوي',
-                          onPressed: _openLicenseActivationDialog,
-                          icon: const Icon(Icons.vpn_key_rounded, size: 18),
+                        onPressed: () async {
+                          final updated = await Navigator.push<bool>(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => SubscriptionScreen(
+                                deviceCode: _licenseInfo!.deviceCode,
+                              ),
+                            ),
+                          );
+                          if (updated == true || mounted) {
+                            await _loadSettings();
+                          }
+                        },
+                        icon: const Icon(Icons.star_rounded, size: 20),
+                        label: Text(
+                          _licenseInfo!.isActivated ? 'تجديد / ترقية الاشتراك' : 'اشترك الآن',
+                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
                         ),
-                      ],
+                      ),
                     ),
                   ],
                 ),
