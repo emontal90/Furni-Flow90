@@ -24,6 +24,18 @@ class LicenseInfo {
 
   bool get isActivated => state == LicenseState.activated;
   bool get isUsable => state == LicenseState.activated || state == LicenseState.trial;
+
+  /// حساب عدد الأيام المتبقية في الاشتراك بدقة
+  int get daysRemaining {
+    if (isPermanent) return 99999;
+    if (expiresAt != null) {
+      final now = DateTime.now();
+      if (now.isAfter(expiresAt!)) return 0;
+      final diff = expiresAt!.difference(now);
+      return diff.inDays > 0 ? diff.inDays : (diff.inHours > 0 ? 1 : 0);
+    }
+    return trialDaysRemaining;
+  }
 }
 
 /// نظام التراخيص التجارية المرتبط بمعرف الجهاز (Device-Bound Offline Licensing)

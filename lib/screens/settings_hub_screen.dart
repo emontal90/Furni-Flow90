@@ -10,7 +10,9 @@ import '../core/app_settings_service.dart';
 import '../core/app_theme.dart';
 import '../core/app_update_service.dart';
 import '../core/app_version.dart';
+import '../core/cloud_service.dart';
 import '../core/license_service.dart';
+import '../core/security_storage_service.dart';
 import 'backup_screen.dart';
 import 'subscription_screen.dart';
 
@@ -81,12 +83,28 @@ class _GeneralSettingsTabState extends State<_GeneralSettingsTab> {
   bool _isLoading = true;
   bool _isUpdating = false;
   bool _isCheckingUpdate = false;
+  bool _isSyncingLicense = false;
   LicenseInfo? _licenseInfo;
 
   @override
   void initState() {
     super.initState();
+    LicenseService.statusNotifier.addListener(_onLicenseChanged);
     _loadSettings();
+  }
+
+  @override
+  void dispose() {
+    LicenseService.statusNotifier.removeListener(_onLicenseChanged);
+    super.dispose();
+  }
+
+  void _onLicenseChanged() {
+    if (mounted) {
+      setState(() {
+        _licenseInfo = LicenseService.statusNotifier.value;
+      });
+    }
   }
 
   Future<void> _loadSettings() async {
@@ -105,6 +123,40 @@ class _GeneralSettingsTabState extends State<_GeneralSettingsTab> {
         _licenseInfo = license;
         _isLoading = false;
       });
+    }
+
+    // فحص وتحديث فوري لحالة الاشتراك من سوبا بيز لحظياً
+    if (!kIsWeb) {
+      SecurityStorageService.getDeviceCode().then((code) async {
+        final sub = await CloudService.checkAndSyncSubscriptionStatus(code);
+        if (sub != null && mounted) {
+          final updated = await LicenseService.checkStatus();
+          if (mounted) {
+            setState(() => _licenseInfo = updated);
+          }
+        }
+      });
+    }
+  }
+
+  Future<void> _manualSyncLicense() async {
+    setState(() => _isSyncingLicense = true);
+    final code = await SecurityStorageService.getDeviceCode();
+    final sub = await CloudService.checkAndSyncSubscriptionStatus(code);
+    final license = await LicenseService.checkStatus();
+    if (mounted) {
+      setState(() {
+        _licenseInfo = license;
+        _isSyncingLicense = false;
+      });
+      if (sub != null && sub.isActive) {
+        AppNotification.showSuccess(
+          context,
+          'تم تحديث الاشتراك بنجاح! متبقي ${_licenseInfo?.daysRemaining ?? 0} يوماً.',
+        );
+      } else {
+        AppNotification.showInfo(context, 'تم فحص وتحديث حالة الاشتراك بنجاح.');
+      }
     }
   }
 
@@ -908,6 +960,18 @@ class _GeneralSettingsTabState extends State<_GeneralSettingsTab> {
                             ),
                           ),
                         ),
+                        IconButton(
+                          tooltip: 'تحديث حالة الاشتراك من السحابة',
+                          icon: _isSyncingLicense
+                              ? const SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                )
+                              : const Icon(Icons.sync_rounded, size: 20),
+                          onPressed: _isSyncingLicense ? null : _manualSyncLicense,
+                        ),
+                        const SizedBox(width: 4),
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                           decoration: BoxDecoration(
@@ -918,7 +982,9 @@ class _GeneralSettingsTabState extends State<_GeneralSettingsTab> {
                           ),
                           child: Text(
                             _licenseInfo!.isActivated
-                                ? (_licenseInfo!.isPermanent ? 'مفعّل دائم' : 'مفعّل')
+                                ? (_licenseInfo!.isPermanent
+                                    ? 'مفعّل دائم'
+                                    : 'مفعّل (${_licenseInfo!.daysRemaining} يوم متبقي)')
                                 : (_licenseInfo!.state == LicenseState.trial
                                     ? 'تجريبي (${_licenseInfo!.trialDaysRemaining} يوم)'
                                     : 'منتهي'),
@@ -961,9 +1027,18 @@ class _GeneralSettingsTabState extends State<_GeneralSettingsTab> {
                       ],
                     ),
                     if (_licenseInfo!.expiresAt != null && !_licenseInfo!.isPermanent)
-                      Text(
-                        'صالح حتى: ${intl.DateFormat('yyyy-MM-dd').format(_licenseInfo!.expiresAt!)}',
-                        style: TextStyle(fontSize: 12, color: AppTheme.textMuted(context)),
+                      Padding(
+                        padding: const EdgeInsets.only(top: 2, bottom: 4),
+                        child: Text(
+                          'صالح حتى: ${intl.DateFormat('yyyy-MM-dd').format(_licenseInfo!.expiresAt!)} (متبقي ${_licenseInfo!.daysRemaining} يوماً)',
+                          style: TextStyle(
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w600,
+                            color: _licenseInfo!.daysRemaining > 5
+                                ? Colors.green.shade700
+                                : Colors.amber.shade900,
+                          ),
+                        ),
                       ),
                     const SizedBox(height: 10),
                     Row(

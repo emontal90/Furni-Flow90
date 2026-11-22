@@ -244,6 +244,81 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
           context,
           'تم إرسال طلب الاشتراك بنجاح وهو قيد التأكيد والمراجعة من الإدارة.',
         );
+
+        // إشعار تأكيد بارز للمستخدم بأنه تم الاشتراك بنجاح
+        await showDialog<void>(
+          context: context,
+          barrierDismissible: false,
+          builder: (dCtx) => AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            title: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.green.withValues(alpha: 0.15),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.check_circle_rounded, color: Colors.green, size: 28),
+                ),
+                const SizedBox(width: 10),
+                const Expanded(
+                  child: Text(
+                    'تم تنفيذ الاشتراك بنجاح!',
+                    style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ],
+            ),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'تم إرسال طلبك وتسجيل بيانات التحويل السحابية بنجاح.\nجاري الآن ربط ومطابقة التحويل لتفعيل حسابك على هذا الجهاز.',
+                  style: TextStyle(fontSize: 13.5, height: 1.5),
+                ),
+                const SizedBox(height: 14),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: AppTheme.subtleBg(dCtx),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: AppTheme.borderColor(dCtx)),
+                  ),
+                  child: Column(
+                    children: [
+                      _summaryRow(dCtx, 'الباقة:', _selectedPlan.title),
+                      const SizedBox(height: 6),
+                      _summaryRow(dCtx, 'المبلغ المدفوع:', '${_selectedPlan.price} ج.م', highlight: true),
+                      const SizedBox(height: 6),
+                      _summaryRow(
+                        dCtx,
+                        'طريقة الدفع:',
+                        _paymentMethod == PaymentMethod.vodafoneCash ? 'فودافون كاش' : 'انستا باي',
+                      ),
+                      const SizedBox(height: 6),
+                      _summaryRow(dCtx, 'معرف جهازك:', widget.deviceCode),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            actions: [
+              ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppTheme.primaryNavy,
+                  foregroundColor: AppTheme.royalGold,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+                ),
+                onPressed: () => Navigator.pop(dCtx),
+                icon: const Icon(Icons.arrow_back_rounded, size: 18),
+                label: const Text('متابعة حالة التفعيل', style: TextStyle(fontWeight: FontWeight.bold)),
+              ),
+            ],
+          ),
+        );
       } else {
         AppNotification.showError(context, res.error ?? 'فشل إرسال طلب الاشتراك.');
       }
