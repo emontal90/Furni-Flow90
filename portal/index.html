@@ -4,6 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>FurniFlow - بورتال إدارة الاشتراكات والتراخيص</title>
+    <!-- Favicon -->
+    <link rel="icon" type="image/png" href="app_logo.png">
+    <link rel="shortcut icon" type="image/png" href="app_logo.png">
     <!-- Google Fonts (Cairo) -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -16,8 +19,17 @@
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- CryptoJS for HMAC-SHA256 license generation -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
-    <!-- Config injected via GitHub Actions from Repository Secrets / Variables -->
-    <script src="config.js"></script>
+    <!-- تحميل ملف config.js محلياً دون إحداث أخطاء 404 على السحابة -->
+    <script>
+        (function() {
+            if (window.location.protocol === 'file:' || window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+                const s = document.createElement('script');
+                s.src = 'config.js';
+                s.onload = function() { if (typeof initSupabase === 'function') initSupabase(); };
+                document.head.appendChild(s);
+            }
+        })();
+    </script>
 
     <script>
         tailwind.config = {
@@ -110,6 +122,28 @@
                     </div>
                 </div>
 
+                <!-- مفتاح سوبا بيز (Publishable Key): يُحفظ في المتصفح فقط لمنع أي تسريب على جيت هاب -->
+                <div id="apiKeySection" class="p-3.5 bg-navy-950/80 border border-gold-500/30 rounded-2xl space-y-2">
+                    <div class="flex items-center justify-between">
+                        <label class="text-xs font-bold text-gold-400 flex items-center gap-1.5">
+                            <i class="fa-solid fa-key"></i>
+                            <span>مفتاح الربط السحابي (Publishable Key)</span>
+                        </label>
+                        <span class="text-[10px] text-emerald-400 bg-emerald-950 border border-emerald-800 px-1.5 py-0.5 rounded font-bold">آمن ومتصفحي فقط</span>
+                    </div>
+                    <div class="relative">
+                        <i class="fa-solid fa-shield-halved absolute right-3.5 top-3 text-slate-400"></i>
+                        <input type="password" id="inputApiKey" placeholder="sb_publishable_..." dir="ltr"
+                            class="w-full bg-navy-900 border border-slate-700 rounded-xl py-2 pr-10 pl-10 text-xs focus:outline-none focus:border-gold-500 text-white placeholder-slate-500 font-mono">
+                        <button type="button" onclick="toggleApiKeyVisibility()" class="absolute left-3.5 top-2.5 text-slate-400 hover:text-gold-400 transition-colors cursor-pointer" title="إظهار / إخفاء المفتاح">
+                            <i id="apiKeyToggleIcon" class="fa-solid fa-eye text-xs"></i>
+                        </button>
+                    </div>
+                    <p class="text-[11px] text-slate-400 leading-relaxed">
+                        أدخل المفتاح العام (Publishable Key) الخاص بمشروعك في سوبا بيز لمرة واحدة. يُحفظ محلياً في متصفحك فقط ولا يُرفع إطلاقاً إلى GitHub منعاً لأي تسريب.
+                    </p>
+                </div>
+
                 <div id="loginError" class="hidden text-xs text-rose-400 bg-rose-950/50 border border-rose-800 p-3 rounded-xl"></div>
 
                 <button type="submit" id="loginBtn" class="w-full py-3 px-4 rounded-xl gold-gradient text-navy-950 font-black text-sm hover:opacity-95 transition-all shadow-lg shadow-gold-500/20 flex items-center justify-center gap-2">
@@ -152,6 +186,10 @@
 
                     <button onclick="fetchSubscriptions()" title="تحديث البيانات" class="p-2.5 rounded-xl bg-navy-800 border border-slate-700 hover:border-gold-500 text-slate-300 hover:text-gold-400 transition-all">
                         <i id="refreshIcon" class="fa-solid fa-arrows-rotate"></i>
+                    </button>
+
+                    <button onclick="clearStoredKey()" title="إعدادات مفتاح سوبا بيز" class="p-2.5 rounded-xl bg-navy-800 border border-slate-700 hover:border-gold-500 text-slate-300 hover:text-gold-400 transition-all">
+                        <i class="fa-solid fa-key"></i>
                     </button>
 
                     <button onclick="logout()" title="تسجيل الخروج" class="p-2.5 rounded-xl bg-rose-950/60 border border-rose-800/80 hover:bg-rose-900 text-rose-300 transition-all">
@@ -267,20 +305,52 @@
     <script>
         const DEFAULT_URL = 'https://httdsktwfnrkhhlcznzo.supabase.co';
         const SIGNING_SECRET = "MobilyaTrack#CommercialLicense#2026!Secret";
+        const STORAGE_KEY = 'furniflow_sb_anon_key';
 
         let sbClient = null;
         let subscriptions = [];
         let currentFilter = 'all';
 
-        // Initialize Supabase - يُحقن المفتاح تلقائياً عبر متغيرات GitHub Actions في ملف config.js
+        // استخراج مفتاح سوبا بيز: 1) من البيئة المحلية 2) من التخزين المحلي للمتصفح 3) من الحقل اليدوي
+        function getSupabaseKey() {
+            if (window.__ENV__ && window.__ENV__.SUPABASE_ANON_KEY) {
+                return window.__ENV__.SUPABASE_ANON_KEY.trim();
+            }
+            const saved = localStorage.getItem(STORAGE_KEY);
+            if (saved && saved.trim()) {
+                return saved.trim();
+            }
+            const input = document.getElementById('inputApiKey');
+            if (input && input.value.trim()) {
+                return input.value.trim();
+            }
+            return '';
+        }
+
+        // Initialize Supabase بأمان تام مع دعم التخزين المحلي لمتصفح المدير
         function initSupabase() {
             const env = window.__ENV__ || {};
             const url = env.SUPABASE_URL || DEFAULT_URL;
-            const key = env.SUPABASE_ANON_KEY || '';
+            const key = getSupabaseKey();
+            const section = document.getElementById('apiKeySection');
+
+            // إذا كان المفتاح موجوداً في config.js أو محفوظاً في localStorage، نخفي حقل الإدخال
+            const isAutoConfigured = (window.__ENV__ && window.__ENV__.SUPABASE_ANON_KEY) || localStorage.getItem(STORAGE_KEY);
+            if (section) {
+                section.classList.toggle('hidden', Boolean(isAutoConfigured));
+            }
 
             if (key && window.supabase) {
-                sbClient = window.supabase.createClient(url, key);
+                try {
+                    sbClient = window.supabase.createClient(url, key);
+                    return true;
+                } catch (e) {
+                    console.error('Error initializing Supabase:', e);
+                    if (section) section.classList.remove('hidden');
+                    return false;
+                }
             }
+            return false;
         }
 
         // إظهار وإخفاء كلمة المرور في شاشة الدخول
@@ -295,6 +365,32 @@
                 input.type = 'password';
                 icon.classList.remove('fa-eye-slash');
                 icon.classList.add('fa-eye');
+            }
+        }
+
+        // إظهار وإخفاء مفتاح سوبا بيز
+        function toggleApiKeyVisibility() {
+            const input = document.getElementById('inputApiKey');
+            const icon = document.getElementById('apiKeyToggleIcon');
+            if (input.type === 'password') {
+                input.type = 'text';
+                icon.classList.remove('fa-eye');
+                icon.classList.add('fa-eye-slash');
+            } else {
+                input.type = 'password';
+                icon.classList.remove('fa-eye-slash');
+                icon.classList.add('fa-eye');
+            }
+        }
+
+        // مسح المفتاح المحفوظ محلياً من المتصفح
+        function clearStoredKey() {
+            if (confirm('هل ترغب في مسح مفتاح سوبا بيز المحفوظ في هذا المتصفح؟ ستحتاج لإعادة كتابته عند الدخول القادم.')) {
+                localStorage.removeItem(STORAGE_KEY);
+                logout();
+                showToast('تم مسح المفتاح المحفوظ محلياً بنجاح');
+                const section = document.getElementById('apiKeySection');
+                if (section) section.classList.remove('hidden');
             }
         }
 
@@ -347,27 +443,38 @@
             const loginBtn = document.getElementById('loginBtn');
 
             errBox.classList.add('hidden');
-            loginBtn.disabled = true;
-            loginBtn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> جاري التحقق...';
+
+            // إذا لم يتم تهيئة سوبا بيز بعد، نحاول تهيئته الآن
+            if (!sbClient) {
+                initSupabase();
+            }
 
             if (!sbClient) {
-                errBox.innerText = 'تنبيه أمني: لم يتم العثور على مفتاح Supabase Anon Key. يرجى التأكد من كتابة المفتاح في portal/config.js محلياً أو ضبطه في GitHub Actions.';
+                errBox.innerText = 'يرجى إدخال مفتاح سوبا بيز (Publishable Key) في الحقل المخصص أدناه لربط البورتال بالسحابة بأمان.';
                 errBox.classList.remove('hidden');
-                loginBtn.disabled = false;
-                loginBtn.innerHTML = '<i class="fa-solid fa-right-to-bracket"></i> <span>تسجيل الدخول للإدارة</span>';
+                document.getElementById('apiKeySection')?.classList.remove('hidden');
                 return;
             }
+
+            loginBtn.disabled = true;
+            loginBtn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> جاري التحقق...';
 
             try {
                 const { data, error } = await sbClient.auth.signInWithPassword({ email, password });
                 if (error) throw error;
+
+                // إذا قام المستخدم بكتابة المفتاح يدوياً، نحفظه في localStorage لهذا المتصفح
+                const inputKey = document.getElementById('inputApiKey')?.value.trim();
+                if (inputKey) {
+                    localStorage.setItem(STORAGE_KEY, inputKey);
+                }
 
                 document.getElementById('adminUserLabel').innerText = data.user.email;
                 showView('dashboard');
                 fetchSubscriptions();
                 showToast('مرحباً بك! تم تسجيل الدخول بنجاح');
             } catch (err) {
-                errBox.innerText = 'خطأ في تسجيل الدخول: ' + (err.message || 'بيانات الدخول غير صحيحة');
+                errBox.innerText = 'خطأ في تسجيل الدخول: ' + (err.message || 'بيانات الدخول أو مفتاح سوبا بيز غير صحيح');
                 errBox.classList.remove('hidden');
             } finally {
                 loginBtn.disabled = false;
@@ -700,7 +807,6 @@
         window.addEventListener('DOMContentLoaded', async () => {
             initSupabase();
             if (!sbClient) {
-                console.warn('Supabase client not initialized. Waiting for config.js injection.');
                 showView('login');
                 return;
             }
