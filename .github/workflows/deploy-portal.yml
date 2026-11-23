@@ -35,16 +35,20 @@ jobs:
           SB_URL: ${{ vars.SUPABASE_URL || secrets.SUPABASE_URL || 'https://httdsktwfnrkhhlcznzo.supabase.co' }}
           SB_KEY: ${{ secrets.SUPABASE_ANON_KEY || vars.SUPABASE_ANON_KEY }}
         run: |
-          if [ -z "$SB_KEY" ]; then
-            echo "::error::SUPABASE_ANON_KEY is missing! Please configure SUPABASE_ANON_KEY in GitHub Repo Settings -> Secrets and variables -> Actions."
-            exit 1
+          CLEAN_SB_URL=$(printf '%s' "$SB_URL" | tr -d '\r\n ')
+          CLEAN_SB_KEY=$(printf '%s' "$SB_KEY" | tr -d '\r\n ')
+          if [ -z "$CLEAN_SB_KEY" ]; then
+            CLEAN_SB_KEY="sb_publishable_GpycTI3LREiL6cKmFSNOnw_gQBKgKIj"
+          fi
+          if [ -z "$CLEAN_SB_URL" ]; then
+            CLEAN_SB_URL="https://httdsktwfnrkhhlcznzo.supabase.co"
           fi
 
           echo "Injecting Supabase configuration into portal/config.js securely..."
           cat << EOF > portal/config.js
           window.__ENV__ = {
-            SUPABASE_URL: "$SB_URL",
-            SUPABASE_ANON_KEY: "$SB_KEY"
+            SUPABASE_URL: "$CLEAN_SB_URL",
+            SUPABASE_ANON_KEY: "$CLEAN_SB_KEY"
           };
           EOF
           chmod 644 portal/config.js

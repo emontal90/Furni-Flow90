@@ -69,8 +69,16 @@ jobs:
 
       - name: Build Release APK
         env:
-          SUPABASE_KEY: ${{ secrets.SUPABASE_ANON_KEY || vars.SUPABASE_ANON_KEY }}
-        run: flutter build apk --release --dart-define=SUPABASE_ANON_KEY="$SUPABASE_KEY"
+          RAW_SB_KEY: ${{ secrets.SUPABASE_ANON_KEY || vars.SUPABASE_ANON_KEY }}
+        run: |
+          CLEAN_SB_KEY=$(printf '%s' "$RAW_SB_KEY" | tr -d '\r\n ')
+          if [ -n "$CLEAN_SB_KEY" ]; then
+            echo "Building APK with injected SUPABASE_ANON_KEY..."
+            flutter build apk --release --dart-define="SUPABASE_ANON_KEY=$CLEAN_SB_KEY"
+          else
+            echo "Building APK with default configuration..."
+            flutter build apk --release
+          fi
 
       - name: Clean Signing Secrets
         if: always()
