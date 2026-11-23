@@ -693,7 +693,7 @@ void main() {
       ),
     );
 
-    expect(find.text('طقم ترابيزات : "صالون ملكي"'), findsOneWidget);
+    expect(find.text('طقم ترابيزة : "صالون ملكي"'), findsOneWidget);
     expect(find.byIcon(Icons.table_restaurant_rounded), findsWidgets);
   });
 

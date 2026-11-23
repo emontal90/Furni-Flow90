@@ -146,7 +146,7 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
     setState(() {
       _orderSetsCount = newCount;
       for (var c in _editableComponents) {
-        if (c['is_custom'] != true && c['source_category_id'] == null) {
+        if (c['is_custom'] != true && c['source_category_id'] == null && c['is_table'] != true) {
           final int baseQty = (c['base_qty'] as int?) ?? 1;
           c['qty'] = newCount * baseQty;
           c['selected'] = c['qty'] > 0;

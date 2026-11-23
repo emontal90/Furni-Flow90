@@ -42,7 +42,7 @@ class OrderCard extends StatelessWidget {
 
     final bool isTablesOnly = OrderDeliveryHelper.isTableSetOnlyOrder(comps);
     final String categoryDisplayName = isTablesOnly
-        ? 'طقم ترابيزات : "${order['category_name']}"'
+        ? 'طقم ترابيزة : "${order['category_name']}"'
         : 'طقم: ${order['category_name']}';
 
     final int? setsCount = (order['sets_count'] as int?);
@@ -124,13 +124,28 @@ class OrderCard extends StatelessWidget {
                         spacing: 6,
                         runSpacing: 4,
                         children: [
-                          Text(
-                            categoryDisplayName,
-                            style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 12.5,
-                              color: isTablesOnly ? const Color(0xFF0F766E) : AppTheme.textBody(context),
-                            ),
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              if (isTablesOnly) ...[
+                                const Icon(
+                                  Icons.table_restaurant_rounded,
+                                  size: 15,
+                                  color: Color(0xFF0D9488),
+                                ),
+                                const SizedBox(width: 4),
+                              ],
+                              Text(
+                                categoryDisplayName,
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 12.5,
+                                  color: isTablesOnly
+                                      ? const Color(0xFF0D9488) // لون تركوازي زاهي ومميز لخط طقم الترابيزة
+                                      : (AppTheme.isDark(context) ? Colors.grey.shade300 : AppTheme.primaryNavy), // لون خط الطقم العادي
+                                ),
+                              ),
+                            ],
                           ),
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
@@ -273,7 +288,7 @@ class OrderCard extends StatelessWidget {
                       style: TextStyle(
                           fontWeight: FontWeight.bold,
                           fontSize: 14,
-                          color: isTablesOnly ? const Color(0xFF0F766E) : AppTheme.primaryNavy),
+                          color: isTablesOnly ? const Color(0xFF0D9488) : AppTheme.primaryNavy),
                     ),
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
