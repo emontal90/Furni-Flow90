@@ -115,10 +115,12 @@ class SearchableSelectFormField<T> extends StatelessWidget {
         ),
         isEmpty: selected == null,
         child: selected == null
-            ? Text(
-                hintText ?? 'اضغط للاختيار...',
-                style: TextStyle(color: Colors.grey.shade500, fontSize: 14),
-              )
+            ? (hintText != null && hintText!.isNotEmpty
+                ? Text(
+                    hintText!,
+                    style: TextStyle(color: Colors.grey.shade500, fontSize: 14),
+                  )
+                : const SizedBox.shrink())
             : Row(
                 children: [
                   Expanded(

@@ -403,7 +403,7 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
           SearchableSelectFormField<int>(
             key: ValueKey('cust_${_selectedCustomerId ?? 'none'}'),
             value: _selectedCustomerId,
-            labelText: 'اسم الزبون / العميل *',
+            labelText: 'اسم الزبون \\ العميل',
             searchHint: 'اكتب اسم العميل أو الهاتف للتصفية السريعة...',
             prefixIcon: const Icon(Icons.person, color: AppTheme.primaryNavy),
             items: _customers.map((c) {
@@ -433,7 +433,7 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
           SearchableSelectFormField<int>(
             key: ValueKey('primary_cat_${_selectedCategoryId ?? 'none'}'),
             value: _selectedCategoryId,
-            labelText: 'اسم الطقم (الصنف) *',
+            labelText: 'اسم الطقم ( الصنف)',
             searchHint: 'اكتب اسم الصنف للبحث السريع...',
             prefixIcon: const Icon(Icons.weekend, color: AppTheme.primaryNavy),
             items: _categories.map((c) {
@@ -507,7 +507,7 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
                     if (CategoryStockHelper.hasTables(_selectedCategory!)) ...[
                       const SizedBox(height: 10),
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                         decoration: BoxDecoration(
                           color: _includeTables
                               ? const Color(0xFF0D9488).withValues(alpha: 0.08)
@@ -520,39 +520,40 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
                           ),
                         ),
                         child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            Row(
-                              children: [
-                                Container(
-                                  padding: const EdgeInsets.all(6),
-                                  decoration: BoxDecoration(
-                                    color: const Color(0xFF0D9488).withValues(alpha: 0.12),
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  child: const Icon(Icons.table_restaurant_rounded, color: Color(0xFF0D9488), size: 20),
-                                ),
-                                const SizedBox(width: 10),
-                                Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    const Text(
-                                      'تضمين الترابيزات',
-                                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Color(0xFF0F766E)),
-                                    ),
-                                    Text(
-                                      _includeTables
-                                          ? 'تم إدراج قطع الترابيزات بالطلب ويمكنك تعديلها أو حذفها'
-                                          : 'اضغط لإدراج طقم الترابيزات الخاص بهذا الصنف بالطلب',
-                                      style: TextStyle(
-                                        fontSize: 11,
-                                        color: _includeTables ? const Color(0xFF0F766E) : AppTheme.textMuted(context),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ],
+                            Container(
+                              padding: const EdgeInsets.all(6),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF0D9488).withValues(alpha: 0.12),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: const Icon(Icons.table_restaurant_rounded, color: Color(0xFF0D9488), size: 19),
                             ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Text(
+                                    'تضمين الترابيزات',
+                                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13.5, color: Color(0xFF0F766E)),
+                                  ),
+                                  Text(
+                                    _includeTables
+                                        ? 'تم إدراج قطع الترابيزات بالطلب'
+                                        : 'اضغط لإدراج طقم الترابيزات التابع لهذا الصنف',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      color: _includeTables ? const Color(0xFF0F766E) : AppTheme.textMuted(context),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(width: 6),
                             Switch.adaptive(
                               value: _includeTables,
                               activeThumbColor: const Color(0xFF0D9488),

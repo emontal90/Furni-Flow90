@@ -295,7 +295,7 @@ class SecondaryCategoryPickerSection extends StatelessWidget {
                             SearchableSelectFormField<int>(
                               key: ValueKey('sec_cat_${selectedSecondaryCategoryId ?? 'none'}'),
                               value: selectedSecondaryCategoryId,
-                              labelText: 'اختر الطقم الآخر *',
+                              labelText: 'اختيار طقم اخر',
                               searchHint: 'اكتب اسم الطقم للتصفية...',
                               prefixIcon: Icon(
                                 Icons.weekend_outlined,

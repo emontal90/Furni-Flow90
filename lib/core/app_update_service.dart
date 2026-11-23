@@ -203,73 +203,137 @@ class AppUpdateService {
     final tmpFile = File('${updatesDir.path}/furniflow-update.apk.tmp');
     final finalFile = File('${updatesDir.path}/furniflow-update.apk');
 
-    final client = HttpClient()..connectionTimeout = const Duration(seconds: 15);
-    IOSink? sink;
-
     try {
       try {
         await _channel.invokeMethod<void>('acquireWakeLock');
       } catch (_) {}
 
-      Uri currentUri = Uri.parse(update.downloadUrl);
-      HttpClientResponse? finalResponse;
-
-      for (var hop = 0; hop < 6; hop++) {
-        if (isCancelled?.call() == true) {
-          throw Exception('تم إلغاء التنزيل.');
-        }
-        if (currentUri.scheme != 'https' || !_trustedDownloadHosts.contains(currentUri.host)) {
-          throw HttpException('تم رفض التحويل إلى نطاق غير موثوق: ${currentUri.host}');
-        }
-
-        final req = await client.getUrl(currentUri).timeout(const Duration(seconds: 15));
-        req.followRedirects = false;
-        req.headers.set(HttpHeaders.userAgentHeader, 'FurniFlow-ERP-Android');
-        final resp = await req.close().timeout(const Duration(seconds: 20));
-
-        if (resp.isRedirect ||
-            resp.statusCode == HttpStatus.movedPermanently ||
-            resp.statusCode == HttpStatus.found ||
-            resp.statusCode == HttpStatus.seeOther ||
-            resp.statusCode == HttpStatus.temporaryRedirect ||
-            resp.statusCode == 308) {
-          final location = resp.headers.value(HttpHeaders.locationHeader);
-          await resp.drain<void>();
-          if (location == null || location.isEmpty) {
-            throw const HttpException('رابط التحويل فارغ.');
-          }
-          currentUri = currentUri.resolve(location);
-          continue;
-        }
-
-        finalResponse = resp;
-        break;
-      }
-
-      if (finalResponse == null || finalResponse.statusCode != HttpStatus.ok) {
-        throw HttpException('فشل تحميل التحديث (رمز الحالة: ${finalResponse?.statusCode ?? "unknown"})');
-      }
-
-      final totalBytes = finalResponse.contentLength > 0
-          ? finalResponse.contentLength
-          : update.apkSize;
-
-      sink = tmpFile.openWrite();
       int receivedBytes = 0;
+      if (await tmpFile.exists()) {
+        receivedBytes = await tmpFile.length();
+      }
 
-      await for (final chunk in finalResponse) {
+      int totalBytes = update.apkSize;
+      int retries = 0;
+      const int maxRetries = 12;
+
+      while (retries < maxRetries) {
         if (isCancelled?.call() == true) {
           throw Exception('تم إلغاء التنزيل.');
         }
-        sink.add(chunk);
-        receivedBytes += chunk.length;
-        final progress = totalBytes > 0 ? (receivedBytes / totalBytes).clamp(0.0, 1.0) : null;
-        onProgress(progress, receivedBytes, totalBytes);
-      }
 
-      await sink.flush();
-      await sink.close();
-      sink = null;
+        final client = HttpClient()..connectionTimeout = const Duration(seconds: 15);
+        IOSink? sink;
+
+        try {
+          Uri currentUri = Uri.parse(update.downloadUrl);
+          HttpClientResponse? finalResponse;
+
+          for (var hop = 0; hop < 6; hop++) {
+            if (isCancelled?.call() == true) {
+              throw Exception('تم إلغاء التنزيل.');
+            }
+            if (currentUri.scheme != 'https' || !_trustedDownloadHosts.contains(currentUri.host)) {
+              throw HttpException('تم رفض التحويل إلى نطاق غير موثوق: ${currentUri.host}');
+            }
+
+            final req = await client.getUrl(currentUri).timeout(const Duration(seconds: 15));
+            req.followRedirects = false;
+            req.headers.set(HttpHeaders.userAgentHeader, 'FurniFlow-ERP-Android');
+            if (receivedBytes > 0) {
+              req.headers.set(HttpHeaders.rangeHeader, 'bytes=$receivedBytes-');
+            }
+            final resp = await req.close().timeout(const Duration(seconds: 20));
+
+            if (resp.isRedirect ||
+                resp.statusCode == HttpStatus.movedPermanently ||
+                resp.statusCode == HttpStatus.found ||
+                resp.statusCode == HttpStatus.seeOther ||
+                resp.statusCode == HttpStatus.temporaryRedirect ||
+                resp.statusCode == 308) {
+              final location = resp.headers.value(HttpHeaders.locationHeader);
+              await resp.drain<void>();
+              if (location == null || location.isEmpty) {
+                throw const HttpException('رابط التحويل فارغ.');
+              }
+              currentUri = currentUri.resolve(location);
+              continue;
+            }
+
+            finalResponse = resp;
+            break;
+          }
+
+          if (finalResponse == null) {
+            throw const HttpException('تعذر الاتصال بخادم التحديث.');
+          }
+
+          final bool isPartial = finalResponse.statusCode == HttpStatus.partialContent;
+          final bool isOk = finalResponse.statusCode == HttpStatus.ok;
+
+          if (!isPartial && !isOk) {
+            throw HttpException('فشل تحميل التحديث (رمز الحالة: ${finalResponse.statusCode})');
+          }
+
+          if (isOk && receivedBytes > 0) {
+            receivedBytes = 0;
+          }
+
+          if (finalResponse.contentLength > 0) {
+            totalBytes = isPartial
+                ? receivedBytes + finalResponse.contentLength
+                : finalResponse.contentLength;
+          } else if (totalBytes <= 0) {
+            totalBytes = update.apkSize;
+          }
+
+          sink = tmpFile.openWrite(mode: isPartial ? FileMode.append : FileMode.write);
+
+          await for (final chunk in finalResponse) {
+            if (isCancelled?.call() == true) {
+              throw Exception('تم إلغاء التنزيل.');
+            }
+            sink.add(chunk);
+            receivedBytes += chunk.length;
+            final progress = totalBytes > 0 ? (receivedBytes / totalBytes).clamp(0.0, 1.0) : null;
+            onProgress(progress, receivedBytes, totalBytes);
+          }
+
+          await sink.flush();
+          await sink.close();
+          sink = null;
+
+          if (totalBytes > 0 && receivedBytes >= totalBytes) {
+            break;
+          } else if (totalBytes <= 0 && receivedBytes > 500 * 1024) {
+            break;
+          }
+        } catch (e) {
+          try {
+            await sink?.flush();
+            await sink?.close();
+          } catch (_) {}
+          sink = null;
+          client.close(force: true);
+
+          if (isCancelled?.call() == true) {
+            throw Exception('تم إلغاء التنزيل.');
+          }
+
+          retries++;
+          if (retries >= maxRetries) {
+            rethrow;
+          }
+
+          await Future<void>.delayed(const Duration(seconds: 2));
+          if (await tmpFile.exists()) {
+            receivedBytes = await tmpFile.length();
+          }
+          continue;
+        } finally {
+          client.close(force: true);
+        }
+      }
 
       if (receivedBytes < 500 * 1024) {
         throw const FormatException('الملف الذي تم تنزيله غير مكتمل أو تالف.');
@@ -297,19 +361,10 @@ class AppUpdateService {
       }
       await tmpFile.rename(finalFile.path);
       return finalFile.path;
-    } catch (e) {
-      try {
-        await sink?.close();
-      } catch (_) {}
-      try {
-        if (await tmpFile.exists()) await tmpFile.delete();
-      } catch (_) {}
-      rethrow;
     } finally {
       try {
         await _channel.invokeMethod<void>('releaseWakeLock');
       } catch (_) {}
-      client.close(force: true);
     }
   }
 

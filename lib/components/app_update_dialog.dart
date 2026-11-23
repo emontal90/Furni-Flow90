@@ -136,11 +136,15 @@ class _AppUpdateDialogState extends State<AppUpdateDialog> {
         : '';
 
     return AlertDialog(
+      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+      actionsOverflowButtonSpacing: 8,
+      actionsOverflowDirection: VerticalDirection.down,
+      actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
       title: Row(
         children: [
           Container(
-            padding: const EdgeInsets.all(8),
+            padding: const EdgeInsets.all(7),
             decoration: BoxDecoration(
               color: AppTheme.primaryNavy.withValues(alpha: 0.1),
               shape: BoxShape.circle,
@@ -148,15 +152,15 @@ class _AppUpdateDialogState extends State<AppUpdateDialog> {
             child: const Icon(
               Icons.system_update_rounded,
               color: AppTheme.primaryNavy,
-              size: 26,
+              size: 24,
             ),
           ),
-          const SizedBox(width: 10),
+          const SizedBox(width: 8),
           const Expanded(
             child: Text(
               'يتوفر تحديث جديد للتطبيق',
               style: TextStyle(
-                fontSize: 17,
+                fontSize: 16,
                 fontWeight: FontWeight.bold,
                 color: AppTheme.primaryNavy,
               ),
@@ -167,10 +171,10 @@ class _AppUpdateDialogState extends State<AppUpdateDialog> {
       content: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
               decoration: BoxDecoration(
                 color: AppTheme.primaryNavy.withValues(alpha: 0.05),
                 borderRadius: BorderRadius.circular(10),
@@ -179,15 +183,53 @@ class _AppUpdateDialogState extends State<AppUpdateDialog> {
                 ),
               ),
               child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      'الحالي: ${AppVersion.displayVersion}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+                    ),
+                  ),
+                  const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 4),
+                    child: Icon(Icons.arrow_forward_rounded, size: 15, color: AppTheme.primaryNavy),
+                  ),
+                  Expanded(
+                    child: Text(
+                      'الجديد: v${widget.update.version}$sizeLabel',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.end,
+                      style: const TextStyle(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.bold,
+                        color: AppTheme.primaryNavy,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            if (_stage == _UpdateDialogStage.prompt) ...[
+              const SizedBox(height: 10),
+              const Text(
+                'يتوفر إصدار وتحديث جديد للنظام لتحسين الأداء والوظائف.',
+                style: TextStyle(fontSize: 13, height: 1.5, color: Colors.black87),
+              ),
+            ],
+            if (_stage == _UpdateDialogStage.downloading) ...[
+              const SizedBox(height: 14),
+              Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text(
-                    'الحالي: ${AppVersion.displayVersion}',
-                    style: TextStyle(fontSize: 12.5, color: Colors.grey.shade700),
+                  const Text(
+                    'جارٍ تنزيل التحديث...',
+                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
                   ),
-                  const Icon(Icons.arrow_forward_rounded, size: 16, color: AppTheme.primaryNavy),
                   Text(
-                    'الجديد: v${widget.update.version}$sizeLabel',
+                    _progress != null ? '${(_progress! * 100).toStringAsFixed(0)}%' : '...',
                     style: const TextStyle(
                       fontSize: 13,
                       fontWeight: FontWeight.bold,
@@ -196,21 +238,7 @@ class _AppUpdateDialogState extends State<AppUpdateDialog> {
                   ),
                 ],
               ),
-            ),
-            if (_stage == _UpdateDialogStage.prompt) ...[
-              const SizedBox(height: 6),
-              const Text(
-                'يتوفر إصدار وتحديث جديد للنظام لتحسين الأداء والوظائف.',
-                style: TextStyle(fontSize: 13.5, height: 1.5, color: Colors.black87),
-              ),
-            ],
-            if (_stage == _UpdateDialogStage.downloading) ...[
-              const SizedBox(height: 16),
-              const Text(
-                'جارٍ تنزيل التحديث...',
-                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
-              ),
-              const SizedBox(height: 10),
+              const SizedBox(height: 8),
               ClipRRect(
                 borderRadius: BorderRadius.circular(6),
                 child: LinearProgressIndicator(
@@ -220,7 +248,7 @@ class _AppUpdateDialogState extends State<AppUpdateDialog> {
                   color: AppTheme.primaryNavy,
                 ),
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 6),
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
@@ -228,21 +256,17 @@ class _AppUpdateDialogState extends State<AppUpdateDialog> {
                     _totalBytes > 0
                         ? '${_formatBytes(_receivedBytes)} / ${_formatBytes(_totalBytes)}'
                         : _formatBytes(_receivedBytes),
-                    style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+                    style: TextStyle(fontSize: 11.5, color: Colors.grey.shade700),
                   ),
-                  Text(
-                    _progress != null ? '${(_progress! * 100).toStringAsFixed(0)}%' : '...',
-                    style: const TextStyle(
-                      fontSize: 12.5,
-                      fontWeight: FontWeight.bold,
-                      color: AppTheme.primaryNavy,
-                    ),
+                  const Text(
+                    'آمن ومحمي ضد انقطاع الشبكة',
+                    style: TextStyle(fontSize: 10.5, color: Colors.grey),
                   ),
                 ],
               ),
             ],
             if (_stage == _UpdateDialogStage.needsPermission) ...[
-              const SizedBox(height: 14),
+              const SizedBox(height: 12),
               Container(
                 padding: const EdgeInsets.all(10),
                 decoration: BoxDecoration(
@@ -252,19 +276,19 @@ class _AppUpdateDialogState extends State<AppUpdateDialog> {
                 ),
                 child: const Text(
                   'تم تنزيل التحديث بنجاح.\nللتثبيت المباشر، يرجى تفعيل خيار "السماح بتثبيت التطبيقات من هذا المصدر" لهذا التطبيق في إعدادات الهاتف ثم العودة والضغط على "متابعة التثبيت".',
-                  style: TextStyle(fontSize: 13, height: 1.5),
+                  style: TextStyle(fontSize: 12.5, height: 1.5),
                 ),
               ),
             ],
             if (_stage == _UpdateDialogStage.readyToInstall) ...[
-              const SizedBox(height: 14),
+              const SizedBox(height: 12),
               const Text(
                 'تم تنزيل التحديث بنجاح وجاهز للتثبيت. إذا لم تفتح نافذة التثبيت تلقائياً، اضغط على "تثبيت التحديث الآن".',
-                style: TextStyle(fontSize: 13, height: 1.45),
+                style: TextStyle(fontSize: 12.5, height: 1.45),
               ),
             ],
             if (_stage == _UpdateDialogStage.error && _errorMessage != null) ...[
-              const SizedBox(height: 14),
+              const SizedBox(height: 12),
               Container(
                 padding: const EdgeInsets.all(10),
                 decoration: BoxDecoration(
@@ -274,7 +298,7 @@ class _AppUpdateDialogState extends State<AppUpdateDialog> {
                 ),
                 child: Text(
                   _errorMessage!,
-                  style: TextStyle(fontSize: 12.5, color: Colors.red.shade900),
+                  style: TextStyle(fontSize: 12, color: Colors.red.shade900),
                 ),
               ),
             ],
