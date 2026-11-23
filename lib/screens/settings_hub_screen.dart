@@ -84,6 +84,7 @@ class _GeneralSettingsTabState extends State<_GeneralSettingsTab> {
   bool _isUpdating = false;
   bool _isCheckingUpdate = false;
   bool _isSyncingLicense = false;
+  bool _hasNotifiedExpiringSoon = false;
   LicenseInfo? _licenseInfo;
 
   @override
@@ -123,6 +124,24 @@ class _GeneralSettingsTabState extends State<_GeneralSettingsTab> {
         _licenseInfo = license;
         _isLoading = false;
       });
+
+      // تنبيه المستخدم بأناقة قبل انتهاء الاشتراك بـ 3 أيام
+      if (_licenseInfo != null &&
+          _licenseInfo!.isUsable &&
+          !_licenseInfo!.isPermanent &&
+          _licenseInfo!.daysRemaining <= 3 &&
+          _licenseInfo!.daysRemaining > 0 &&
+          !_hasNotifiedExpiringSoon) {
+        _hasNotifiedExpiringSoon = true;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            AppNotification.showWarning(
+              context,
+              'تنبيه اشتراك: متبقي ${_licenseInfo!.daysRemaining} أيام فقط على انتهاء الاشتراك. يرجى التجديد لضمان استمرار الخدمة.',
+            );
+          }
+        });
+      }
     }
 
     // فحص وتحديث فوري لحالة الاشتراك من سوبا بيز لحظياً
@@ -828,41 +847,112 @@ class _GeneralSettingsTabState extends State<_GeneralSettingsTab> {
           ),
           const SizedBox(height: 14),
 
-          // 5. بطاقة الترخيص والتفعيل التجاري
-          if (_licenseInfo != null)
-            Card(
-              elevation: 2,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
-                side: BorderSide(
-                  color: _licenseInfo!.isActivated
-                      ? Colors.green.withValues(alpha: 0.5)
-                      : AppTheme.royalGold.withValues(alpha: 0.5),
+          // 5. بطاقة الترخيص والتفعيل التجاري (تصميم مميز وفاخر مع إبراز عدد الأيام المتبقية وتنبيه 3 أيام)
+          if (_licenseInfo != null) () {
+            final bool isPermanent = _licenseInfo!.isPermanent;
+            final bool isUsable = _licenseInfo!.isUsable;
+            final int daysLeft = _licenseInfo!.daysRemaining;
+            final bool isExpiringSoon = isUsable && !isPermanent && daysLeft <= 3 && daysLeft > 0;
+            final bool isExpired = !isUsable;
+
+            Color accentColor;
+            List<Color> cardGradient;
+            if (isExpired) {
+              accentColor = Colors.red.shade700;
+              cardGradient = AppTheme.isDark(context)
+                  ? [const Color(0xFF450A0A), const Color(0xFF1E1E24)]
+                  : [const Color(0xFFFEF2F2), Colors.white];
+            } else if (isExpiringSoon) {
+              accentColor = const Color(0xFFD97706);
+              cardGradient = AppTheme.isDark(context)
+                  ? [const Color(0xFF451A03), const Color(0xFF1E1E24)]
+                  : [const Color(0xFFFFFBEB), Colors.white];
+            } else if (_licenseInfo!.isActivated) {
+              accentColor = Colors.green.shade700;
+              cardGradient = AppTheme.isDark(context)
+                  ? [const Color(0xFF064E3B), const Color(0xFF1E1E24)]
+                  : [const Color(0xFFF0FDF4), Colors.white];
+            } else {
+              accentColor = AppTheme.royalGold;
+              cardGradient = AppTheme.isDark(context)
+                  ? [const Color(0xFF3B2E0A), const Color(0xFF1E1E24)]
+                  : [const Color(0xFFFEFCE8), Colors.white];
+            }
+
+            return Container(
+              margin: const EdgeInsets.symmetric(vertical: 4),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: cardGradient,
+                  begin: Alignment.topRight,
+                  end: Alignment.bottomLeft,
                 ),
+                borderRadius: BorderRadius.circular(18),
+                border: Border.all(
+                  color: isExpiringSoon
+                      ? const Color(0xFFF59E0B)
+                      : (_licenseInfo!.isActivated
+                          ? const Color(0xFF10B981)
+                          : AppTheme.royalGold.withValues(alpha: 0.6)),
+                  width: 1.6,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: accentColor.withValues(alpha: 0.08),
+                    blurRadius: 10,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
               ),
               child: Padding(
-                padding: const EdgeInsets.all(14),
+                padding: const EdgeInsets.all(16),
                 child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
+                    // الصف الأول: الأيقونة والعنوان وشارة الحالة وزر المزامنة
                     Row(
                       children: [
-                        Icon(
-                          _licenseInfo!.isActivated
-                              ? Icons.verified_rounded
-                              : Icons.workspace_premium_rounded,
-                          color: _licenseInfo!.isActivated ? Colors.green : AppTheme.royalGold,
-                          size: 22,
+                        Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: accentColor.withValues(alpha: 0.14),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Icon(
+                            isExpired
+                                ? Icons.lock_clock_rounded
+                                : (_licenseInfo!.isActivated
+                                    ? Icons.verified_rounded
+                                    : Icons.workspace_premium_rounded),
+                            color: accentColor,
+                            size: 24,
+                          ),
                         ),
-                        const SizedBox(width: 8),
+                        const SizedBox(width: 10),
                         Expanded(
-                          child: Text(
-                            'الترخيص والتفعيل التجاري',
-                            style: TextStyle(
-                              fontSize: 15.5,
-                              fontWeight: FontWeight.bold,
-                              color: AppTheme.textPrimary(context),
-                            ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'الترخيص والتفعيل التجاري',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                  color: AppTheme.textPrimary(context),
+                                ),
+                              ),
+                              Text(
+                                isPermanent
+                                    ? 'نسخة تجارية كاملة مفعّلة'
+                                    : (_licenseInfo!.isActivated
+                                        ? 'اشتراك تجاري سحابي نشط'
+                                        : (isExpired ? 'انتهت فترة الاستخدام' : 'فترة تجريبية مجانية 30 يوماً')),
+                                style: TextStyle(
+                                  fontSize: 11.5,
+                                  color: AppTheme.textMuted(context),
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                         IconButton(
@@ -876,84 +966,202 @@ class _GeneralSettingsTabState extends State<_GeneralSettingsTab> {
                               : const Icon(Icons.sync_rounded, size: 20),
                           onPressed: _isSyncingLicense ? null : _manualSyncLicense,
                         ),
-                        const SizedBox(width: 4),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                          decoration: BoxDecoration(
-                            color: _licenseInfo!.isActivated
-                                ? Colors.green.withValues(alpha: 0.16)
-                                : Colors.amber.withValues(alpha: 0.18),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Text(
-                            _licenseInfo!.isActivated
-                                ? (_licenseInfo!.isPermanent
-                                    ? 'مفعّل دائم'
-                                    : 'مفعّل (${_licenseInfo!.daysRemaining} يوم متبقي)')
-                                : (_licenseInfo!.state == LicenseState.trial
-                                    ? 'تجريبي (${_licenseInfo!.trialDaysRemaining} يوم)'
-                                    : 'منتهي'),
-                            style: TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.bold,
-                              color: _licenseInfo!.isActivated
-                                  ? Colors.green.shade700
-                                  : Colors.amber.shade900,
-                            ),
-                          ),
-                        ),
                       ],
                     ),
-                    const SizedBox(height: 10),
-                    Row(
-                      children: [
-                        Text(
-                          'معرف الجهاز: ',
-                          style: TextStyle(fontSize: 12.5, color: AppTheme.textMuted(context)),
-                        ),
-                        Expanded(
-                          child: SelectableText(
-                            _licenseInfo!.deviceCode,
-                            style: TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w900,
-                              color: AppTheme.textPrimary(context),
-                            ),
-                          ),
-                        ),
-                        IconButton(
-                          tooltip: 'نسخ معرف الجهاز',
-                          icon: const Icon(Icons.copy_rounded, size: 18),
-                          onPressed: () {
-                            Clipboard.setData(ClipboardData(text: _licenseInfo!.deviceCode));
-                            AppNotification.showSuccess(context, 'تم نسخ معرف الجهاز');
-                          },
-                        ),
-                      ],
-                    ),
-                    if (_licenseInfo!.expiresAt != null && !_licenseInfo!.isPermanent)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 2, bottom: 4),
-                        child: Text(
-                          'صالح حتى: ${intl.DateFormat('yyyy-MM-dd').format(_licenseInfo!.expiresAt!)} (متبقي ${_licenseInfo!.daysRemaining} يوماً)',
-                          style: TextStyle(
-                            fontSize: 12.5,
-                            fontWeight: FontWeight.w600,
-                            color: _licenseInfo!.daysRemaining > 5
-                                ? Colors.green.shade700
-                                : Colors.amber.shade900,
-                          ),
+                    const SizedBox(height: 12),
+
+                    // كارد عدد أيام الاشتراك المميز والبارز
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                      decoration: BoxDecoration(
+                        color: AppTheme.cardBg(context),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(
+                          color: isExpiringSoon
+                              ? const Color(0xFFF59E0B)
+                              : (_licenseInfo!.isActivated
+                                  ? const Color(0xFF10B981).withValues(alpha: 0.4)
+                                  : AppTheme.royalGold.withValues(alpha: 0.4)),
+                          width: 1.2,
                         ),
                       ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    Icon(
+                                      isPermanent
+                                          ? Icons.all_inclusive_rounded
+                                          : (isExpiringSoon ? Icons.hourglass_bottom_rounded : Icons.calendar_today_rounded),
+                                      size: 15,
+                                      color: accentColor,
+                                    ),
+                                    const SizedBox(width: 6),
+                                    Text(
+                                      isPermanent
+                                          ? 'صلاحية الترخيص:'
+                                          : (_licenseInfo!.isActivated ? 'الرصيد المتبقي بالاشتراك:' : 'الرصيد المتبقي بالتجربة:'),
+                                      style: TextStyle(
+                                        fontSize: 12.5,
+                                        fontWeight: FontWeight.bold,
+                                        color: AppTheme.textPrimary(context),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  isPermanent
+                                      ? 'مفعّل بصلاحية غير محدودة'
+                                      : (_licenseInfo!.expiresAt != null
+                                          ? 'صالح حتى: ${intl.DateFormat('yyyy-MM-dd').format(_licenseInfo!.expiresAt!)}'
+                                          : 'فترة تجربة مجانية 30 يوماً'),
+                                  style: TextStyle(
+                                    fontSize: 11.5,
+                                    color: AppTheme.textMuted(context),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          // العداد الرقمي البارز للأيام
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                colors: isExpired
+                                    ? [Colors.red.shade700, Colors.red.shade900]
+                                    : (isExpiringSoon
+                                        ? [const Color(0xFFF59E0B), const Color(0xFFD97706)]
+                                        : (_licenseInfo!.isActivated
+                                            ? [const Color(0xFF10B981), const Color(0xFF059669)]
+                                            : [AppTheme.primaryNavy, const Color(0xFF1E3A8A)])),
+                              ),
+                              borderRadius: BorderRadius.circular(12),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: accentColor.withValues(alpha: 0.25),
+                                  blurRadius: 6,
+                                  offset: const Offset(0, 2),
+                                ),
+                              ],
+                            ),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  isPermanent ? '∞' : '$daysLeft',
+                                  style: const TextStyle(
+                                    fontSize: 22,
+                                    fontWeight: FontWeight.w900,
+                                    color: Colors.white,
+                                    height: 1.1,
+                                  ),
+                                ),
+                                Text(
+                                  isPermanent ? 'دائم' : (daysLeft == 1 ? 'يوم واحد' : 'أيام متبقية'),
+                                  style: const TextStyle(
+                                    fontSize: 10.5,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+
+                    // شريط تنبيه أنيق وغير مزعج عند اقتراب انتهاء الاشتراك (3 أيام أو أقل)
+                    if (isExpiringSoon) ...[
+                      const SizedBox(height: 10),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFEF2F2),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: const Color(0xFFFCA5A5)),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.notifications_active_rounded, color: Color(0xFFDC2626), size: 19),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                'تنبيه: متبقي $daysLeft أيام فقط على انتهاء الاشتراك. يرجى التجديد لتجنب إغلاق البرنامج.',
+                                style: const TextStyle(
+                                  fontSize: 11.5,
+                                  fontWeight: FontWeight.bold,
+                                  color: Color(0xFF991B1B),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+
                     const SizedBox(height: 10),
+
+                    // معرف الجهاز (Device Code) في شريط أنيق قابل للنسخ بنقرة واحدة
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: AppTheme.subtleBg(context),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: AppTheme.borderColor(context)),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.phonelink_setup_rounded, size: 16, color: AppTheme.primaryNavy),
+                          const SizedBox(width: 6),
+                          Text(
+                            'معرف الجهاز: ',
+                            style: TextStyle(fontSize: 12, color: AppTheme.textMuted(context)),
+                          ),
+                          Expanded(
+                            child: SelectableText(
+                              _licenseInfo!.deviceCode,
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w900,
+                                color: AppTheme.textPrimary(context),
+                                letterSpacing: 0.5,
+                              ),
+                            ),
+                          ),
+                          IconButton(
+                            tooltip: 'نسخ معرف الجهاز',
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                            icon: const Icon(Icons.copy_rounded, size: 17),
+                            onPressed: () {
+                              Clipboard.setData(ClipboardData(text: _licenseInfo!.deviceCode));
+                              AppNotification.showSuccess(context, 'تم نسخ معرف الجهاز');
+                            },
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+
+                    // زر تجديد / ترقية الاشتراك
                     SizedBox(
                       width: double.infinity,
                       child: ElevatedButton.icon(
                         style: ElevatedButton.styleFrom(
                           backgroundColor: AppTheme.primaryNavy,
                           foregroundColor: AppTheme.royalGold,
-                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          padding: const EdgeInsets.symmetric(vertical: 13),
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          elevation: 2,
                         ),
                         onPressed: () async {
                           final updated = await Navigator.push<bool>(
@@ -978,7 +1186,8 @@ class _GeneralSettingsTabState extends State<_GeneralSettingsTab> {
                   ],
                 ),
               ),
-            ),
+            );
+          }(),
           const SizedBox(height: 14),
 
           // 6. بطاقة معلومات التطبيق والإصدار والتحديثات

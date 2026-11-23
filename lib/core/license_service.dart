@@ -248,6 +248,17 @@ class LicenseService {
         );
         statusNotifier.value = info;
         return info;
+      } else if (res.expiresAt != null && DateTime.now().isAfter(res.expiresAt!)) {
+        // إذا كان هناك مفتاح ترخيص وانتهت صلاحيته، يُقفل البرنامج فوراً كترخيص منتهي الصلاحية
+        final info = LicenseInfo(
+          state: LicenseState.expired,
+          deviceCode: deviceCode,
+          licenseKey: storedKey.trim().toUpperCase(),
+          expiresAt: res.expiresAt,
+          isPermanent: false,
+        );
+        statusNotifier.value = info;
+        return info;
       }
     }
 

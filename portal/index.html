@@ -19,15 +19,14 @@
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- CryptoJS for HMAC-SHA256 license generation -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
-    <!-- تحميل ملف config.js محلياً دون إحداث أخطاء 404 على السحابة -->
+    <!-- تحميل ملف config.js إن وجد لدعم التكوين السحابي -->
     <script>
         (function() {
-            if (window.location.protocol === 'file:' || window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-                const s = document.createElement('script');
-                s.src = 'config.js';
-                s.onload = function() { if (typeof initSupabase === 'function') initSupabase(); };
-                document.head.appendChild(s);
-            }
+            const s = document.createElement('script');
+            s.src = 'config.js';
+            s.onload = function() { if (typeof initSupabase === 'function') initSupabase(); };
+            s.onerror = function() { /* في حال عدم وجود config.js يُعتمد التكوين الافتراضي */ };
+            document.head.appendChild(s);
         })();
     </script>
 
@@ -304,6 +303,7 @@
     <!-- ============================================================== -->
     <script>
         const DEFAULT_URL = 'https://httdsktwfnrkhhlcznzo.supabase.co';
+        const DEFAULT_ANON_KEY = 'sb_publishable_GpycTI3LREiL6cKmFSNOnw_gQBKgKIj';
         const SIGNING_SECRET = "MobilyaTrack#CommercialLicense#2026!Secret";
         const STORAGE_KEY = 'furniflow_sb_anon_key';
 
@@ -311,7 +311,7 @@
         let subscriptions = [];
         let currentFilter = 'all';
 
-        // استخراج مفتاح سوبا بيز: 1) من البيئة المحلية 2) من التخزين المحلي للمتصفح 3) من الحقل اليدوي
+        // استخراج مفتاح سوبا بيز: 1) من البيئة 2) من التخزين المحلي 3) من المفتاح المدمج 4) من الحقل اليدوي
         function getSupabaseKey() {
             if (window.__ENV__ && window.__ENV__.SUPABASE_ANON_KEY) {
                 return window.__ENV__.SUPABASE_ANON_KEY.trim();
@@ -324,7 +324,7 @@
             if (input && input.value.trim()) {
                 return input.value.trim();
             }
-            return '';
+            return DEFAULT_ANON_KEY;
         }
 
         // Initialize Supabase بأمان تام مع دعم التخزين المحلي لمتصفح المدير
@@ -334,10 +334,10 @@
             const key = getSupabaseKey();
             const section = document.getElementById('apiKeySection');
 
-            // إذا كان المفتاح موجوداً في config.js أو محفوظاً في localStorage، نخفي حقل الإدخال
-            const isAutoConfigured = (window.__ENV__ && window.__ENV__.SUPABASE_ANON_KEY) || localStorage.getItem(STORAGE_KEY);
+            // إذا كان المفتاح متوفراً تلقائياً، نخفي حقل الإدخال
+            const isAutoConfigured = Boolean((window.__ENV__ && window.__ENV__.SUPABASE_ANON_KEY) || localStorage.getItem(STORAGE_KEY) || DEFAULT_ANON_KEY);
             if (section) {
-                section.classList.toggle('hidden', Boolean(isAutoConfigured));
+                section.classList.toggle('hidden', isAutoConfigured);
             }
 
             if (key && window.supabase) {

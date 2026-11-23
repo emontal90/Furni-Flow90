@@ -22,6 +22,17 @@ class AppNotification {
     );
   }
 
+  /// إشعار تحذير أنيق (برتقالي / كهرماني)
+  static void showWarning(BuildContext context, String message) {
+    show(
+      context,
+      message: message,
+      icon: Icons.warning_amber_rounded,
+      backgroundColor: const Color(0xFFD97706),
+      duration: const Duration(milliseconds: 2500),
+    );
+  }
+
   /// إشعار معلومات أو تنبيه عام (أزرق داكن)
   static void showInfo(BuildContext context, String message) {
     show(

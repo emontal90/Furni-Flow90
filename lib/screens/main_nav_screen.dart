@@ -6,6 +6,7 @@ import '../core/app_notification.dart';
 import '../core/app_settings_service.dart';
 import '../core/app_theme.dart';
 import '../core/app_update_service.dart';
+import '../core/license_service.dart';
 import 'auth_screen.dart';
 import 'dashboard_screen.dart';
 import 'waiting_orders_screen.dart';
@@ -92,10 +93,27 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
     _isLockOverlayOpen = false;
   }
 
+  static bool _hasShownExpiryNoticeThisSession = false;
+
   Future<void> _runStartupPrompts() async {
     await _checkFirstLaunchBiometricPrompt();
     if (!mounted) return;
     await _checkForAppUpdatesSilently();
+    if (!mounted) return;
+    await _checkSubscriptionExpiryNotice();
+  }
+
+  Future<void> _checkSubscriptionExpiryNotice() async {
+    if (_hasShownExpiryNoticeThisSession || !mounted) return;
+    final lic = LicenseService.statusNotifier.value ?? await LicenseService.checkStatus();
+    if (lic.isUsable && !lic.isPermanent && lic.daysRemaining <= 3 && lic.daysRemaining > 0) {
+      _hasShownExpiryNoticeThisSession = true;
+      if (!mounted) return;
+      AppNotification.showWarning(
+        context,
+        'تنبيه اشتراك: متبقي ${lic.daysRemaining} أيام فقط على انتهاء ${lic.state == LicenseState.trial ? "الفترة التجريبية" : "الاشتراك"}. يرجى التجديد لضمان استمرار الخدمة.',
+      );
+    }
   }
 
   Future<void> _checkForAppUpdatesSilently() async {

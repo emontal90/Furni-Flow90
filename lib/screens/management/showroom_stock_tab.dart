@@ -135,7 +135,8 @@ class _ShowroomStockTabState extends State<ShowroomStockTab> {
           children: [
             Icon(Icons.delete_forever, color: Colors.red, size: 30),
             SizedBox(width: 8),
-            Text('تأكيد حذف الصنف', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            Text('تأكيد حذف الصنف',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
           ],
         ),
         content: Text(
@@ -145,13 +146,16 @@ class _ShowroomStockTabState extends State<ShowroomStockTab> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dCtx, false),
-            child: const Text('إلغاء', style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold)),
+            child: const Text('إلغاء',
+                style:
+                    TextStyle(color: Colors.grey, fontWeight: FontWeight.bold)),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.red,
               foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8)),
             ),
             onPressed: () => Navigator.pop(dCtx, true),
             child: const Text('نعم، حذف الصنف'),
@@ -195,7 +199,8 @@ class _ShowroomStockTabState extends State<ShowroomStockTab> {
                 color: const Color(0xFFD97706).withValues(alpha: 0.15),
                 borderRadius: BorderRadius.circular(10),
               ),
-              child: const Icon(Icons.chair_rounded, color: Color(0xFFD97706), size: 24),
+              child: const Icon(Icons.chair_rounded,
+                  color: Color(0xFFD97706), size: 24),
             ),
             const SizedBox(width: 10),
             Expanded(
@@ -205,11 +210,17 @@ class _ShowroomStockTabState extends State<ShowroomStockTab> {
                 children: [
                   const Text(
                     'تفاصيل الرصيد الفردي',
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppTheme.primaryNavy),
+                    style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: AppTheme.primaryNavy),
                   ),
                   Text(
                     'طقم: $setName (الأطقم المكتملة: $completeSets)',
-                    style: const TextStyle(fontSize: 12, color: Colors.grey, fontWeight: FontWeight.normal),
+                    style: const TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey,
+                        fontWeight: FontWeight.normal),
                     overflow: TextOverflow.ellipsis,
                   ),
                 ],
@@ -239,28 +250,38 @@ class _ShowroomStockTabState extends State<ShowroomStockTab> {
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 8),
                       decoration: BoxDecoration(
                         color: const Color(0xFFD97706).withValues(alpha: 0.08),
                         borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: const Color(0xFFD97706).withValues(alpha: 0.2)),
+                        border: Border.all(
+                            color:
+                                const Color(0xFFD97706).withValues(alpha: 0.2)),
                       ),
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
                           const Text(
                             'إجمالي القطع الفردية الزائدة:',
-                            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Color(0xFFB45309)),
+                            style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 13,
+                                color: Color(0xFFB45309)),
                           ),
                           Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 8, vertical: 2),
                             decoration: BoxDecoration(
                               color: const Color(0xFFD97706),
                               borderRadius: BorderRadius.circular(6),
                             ),
                             child: Text(
                               '$totalExcess قطعة',
-                              style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 13, color: Colors.white),
+                              style: const TextStyle(
+                                  fontWeight: FontWeight.w900,
+                                  fontSize: 13,
+                                  color: Colors.white),
                             ),
                           ),
                         ],
@@ -269,13 +290,17 @@ class _ShowroomStockTabState extends State<ShowroomStockTab> {
                     const SizedBox(height: 12),
                     const Text(
                       'القطع الفردية الزائدة حالياً بالمخزن:',
-                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.black87),
+                      style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.black87),
                     ),
                     const SizedBox(height: 6),
                     ...excessPieces.map((p) {
                       return Container(
                         margin: const EdgeInsets.symmetric(vertical: 4),
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 10),
                         decoration: BoxDecoration(
                           color: Colors.white,
                           borderRadius: BorderRadius.circular(10),
@@ -293,23 +318,31 @@ class _ShowroomStockTabState extends State<ShowroomStockTab> {
                           children: [
                             Row(
                               children: [
-                                const Icon(Icons.weekend_outlined, size: 20, color: AppTheme.primaryNavy),
+                                const Icon(Icons.weekend_outlined,
+                                    size: 20, color: AppTheme.primaryNavy),
                                 const SizedBox(width: 8),
                                 Text(
                                   p['name'] as String,
-                                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: AppTheme.primaryNavy),
+                                  style: const TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 14,
+                                      color: AppTheme.primaryNavy),
                                 ),
                               ],
                             ),
                             Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 10, vertical: 4),
                               decoration: BoxDecoration(
                                 color: const Color(0xFFD97706),
                                 borderRadius: BorderRadius.circular(8),
                               ),
                               child: Text(
                                 '${p['excess_qty']} قطعة زائدة',
-                                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12),
+                                style: const TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 12),
                               ),
                             ),
                           ],
@@ -324,7 +357,8 @@ class _ShowroomStockTabState extends State<ShowroomStockTab> {
             style: ElevatedButton.styleFrom(
               backgroundColor: AppTheme.primaryNavy,
               foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8)),
             ),
             onPressed: () => Navigator.pop(ctx),
             child: const Text('إغلاق'),
@@ -476,7 +510,8 @@ class _ShowroomStockTabState extends State<ShowroomStockTab> {
   }
 
   void _openEditDialog(Map<String, dynamic> cat) {
-    final parsedComps = CategoryStockHelper.parseComponents(cat['components_json']);
+    final parsedComps =
+        CategoryStockHelper.parseComponents(cat['components_json']);
     final int initialSets = CategoryStockHelper.calculateCompleteSets(cat);
     final stockCtrl = TextEditingController(text: '$initialSets');
 
@@ -486,7 +521,8 @@ class _ShowroomStockTabState extends State<ShowroomStockTab> {
     // تحميل رصيد كل قطعة الفعلي الحالي بالمخزن بدون تصفير
     final List<_PieceEditItem> pieces = parsedComps.map((e) {
       final String name = (e['name'] ?? 'قطعة').toString().trim();
-      final int baseQty = CategoryStockHelper.parseInt(e['base_qty'], fallback: 1);
+      final int baseQty =
+          CategoryStockHelper.parseInt(e['base_qty'], fallback: 1);
       final int initialQty = CategoryStockHelper.parseInt(e['qty']);
       final bool isTable = CategoryStockHelper.isTablePiece(e);
       return _PieceEditItem(
@@ -568,7 +604,9 @@ class _ShowroomStockTabState extends State<ShowroomStockTab> {
           int excess = math.max(0, q - (currentS * p.baseQty));
           p.qtyCtrl.text = '${(targetSets * p.baseQty) + excess}';
         }
-        stockCtrl.text = '$targetSets';
+        if (stockCtrl.text.trim() != '$targetSets') {
+          stockCtrl.text = '$targetSets';
+        }
       });
     }
 
@@ -591,7 +629,9 @@ class _ShowroomStockTabState extends State<ShowroomStockTab> {
           int excess = math.max(0, q - (currentS * p.baseQty));
           p.qtyCtrl.text = '${(targetSets * p.baseQty) + excess}';
         }
-        tableStockCtrl.text = '$targetSets';
+        if (tableStockCtrl.text.trim() != '$targetSets') {
+          tableStockCtrl.text = '$targetSets';
+        }
       });
     }
 
@@ -626,7 +666,8 @@ class _ShowroomStockTabState extends State<ShowroomStockTab> {
                       Expanded(
                         child: Row(
                           children: [
-                            const Icon(Icons.warehouse_rounded, color: AppTheme.primaryNavy, size: 26),
+                            const Icon(Icons.warehouse_rounded,
+                                color: AppTheme.primaryNavy, size: 26),
                             const SizedBox(width: 8),
                             Expanded(
                               child: Text(
@@ -651,7 +692,8 @@ class _ShowroomStockTabState extends State<ShowroomStockTab> {
                   const SizedBox(height: 6),
                   Text(
                     'تعديل مباشر على المخزون الحالي: يمكنك تعديل عدد الأطقم الكاملة أو تعديل قطع الطقم الفردية بدقة.',
-                    style: TextStyle(color: AppTheme.textMuted(ctx), fontSize: 13),
+                    style:
+                        TextStyle(color: AppTheme.textMuted(ctx), fontSize: 13),
                   ),
                   const SizedBox(height: 12),
 
@@ -712,7 +754,8 @@ class _ShowroomStockTabState extends State<ShowroomStockTab> {
                                 },
                                 child: const Padding(
                                   padding: EdgeInsets.all(10.0),
-                                  child: Icon(Icons.remove, color: Colors.red, size: 26),
+                                  child: Icon(Icons.remove,
+                                      color: Colors.red, size: 26),
                                 ),
                               ),
                             ),
@@ -724,7 +767,10 @@ class _ShowroomStockTabState extends State<ShowroomStockTab> {
                                 controller: stockCtrl,
                                 keyboardType: TextInputType.number,
                                 textAlign: TextAlign.center,
-                                style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: AppTheme.primaryNavy),
+                                style: const TextStyle(
+                                    fontSize: 20,
+                                    fontWeight: FontWeight.bold,
+                                    color: AppTheme.primaryNavy),
                                 decoration: const InputDecoration(
                                   labelText: 'عدد الأطقم',
                                   prefixIcon: Icon(Icons.weekend_rounded),
@@ -750,7 +796,8 @@ class _ShowroomStockTabState extends State<ShowroomStockTab> {
                                 },
                                 child: const Padding(
                                   padding: EdgeInsets.all(10.0),
-                                  child: Icon(Icons.add, color: Colors.green, size: 26),
+                                  child: Icon(Icons.add,
+                                      color: Colors.green, size: 26),
                                 ),
                               ),
                             ),
@@ -767,11 +814,17 @@ class _ShowroomStockTabState extends State<ShowroomStockTab> {
                     children: [
                       const Text(
                         'قطع الطقم الأساسي (تعديل فردي لكل قطعة):',
-                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: AppTheme.primaryNavy),
+                        style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 13,
+                            color: AppTheme.primaryNavy),
                       ),
                       Text(
                         '${mainPiecesList.length} قطع',
-                        style: TextStyle(fontSize: 12, color: AppTheme.textMuted(ctx), fontWeight: FontWeight.bold),
+                        style: TextStyle(
+                            fontSize: 12,
+                            color: AppTheme.textMuted(ctx),
+                            fontWeight: FontWeight.bold),
                       ),
                     ],
                   ),
@@ -962,7 +1015,8 @@ class _ShowroomStockTabState extends State<ShowroomStockTab> {
                         await StockMovementHelper.logMovement(
                           categoryId: cat['id'],
                           categoryName: cat['name'],
-                          movementType: diff > 0 ? 'manual_add' : 'manual_deduct',
+                          movementType:
+                              diff > 0 ? 'manual_add' : 'manual_deduct',
                           qtyChange: diff,
                           stockAfter: calculatedSets,
                           notes: diff > 0
@@ -983,7 +1037,11 @@ class _ShowroomStockTabState extends State<ShowroomStockTab> {
                         final isTab = p['is_table'] == true;
 
                         final matchingOld = oldComps.firstWhere(
-                          (oc) => (oc['name'] ?? '').toString().trim() == pName.trim(),
+                          (oc) =>
+                              (oc is Map) &&
+                              (oc['name'] ?? '').toString().trim() ==
+                                  pName.trim() &&
+                              (CategoryStockHelper.isTablePiece(oc) == isTab),
                           orElse: () => null,
                         );
 
@@ -994,7 +1052,8 @@ class _ShowroomStockTabState extends State<ShowroomStockTab> {
                             await StockMovementHelper.logMovement(
                               categoryId: cat['id'],
                               categoryName: cat['name'],
-                              movementType: pieceDiff > 0 ? 'piece_add' : 'piece_deduct',
+                              movementType:
+                                  pieceDiff > 0 ? 'piece_add' : 'piece_deduct',
                               qtyChange: pieceDiff,
                               stockAfter: calculatedSets,
                               piecesDelta: [
@@ -1014,13 +1073,15 @@ class _ShowroomStockTabState extends State<ShowroomStockTab> {
                         Navigator.pop(ctx);
                       }
                       if (mounted) {
-                        AppNotification.showSuccess(context, 'تم تحديث رصيد وقطع الطقم بالمخزن بنجاح');
+                        AppNotification.showSuccess(
+                            context, 'تم تحديث رصيد وقطع الطقم بالمخزن بنجاح');
                       }
                     },
                     icon: const Icon(Icons.check_circle_rounded),
                     label: const Text(
                       'حفظ التعديلات في المخزن',
-                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                      style:
+                          TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                     ),
                   ),
                   const SizedBox(height: 12),
@@ -1032,6 +1093,7 @@ class _ShowroomStockTabState extends State<ShowroomStockTab> {
       ),
     ).whenComplete(() {
       stockCtrl.dispose();
+      tableStockCtrl.dispose();
       for (final p in pieces) {
         p.dispose();
       }
@@ -1040,7 +1102,8 @@ class _ShowroomStockTabState extends State<ShowroomStockTab> {
 
   /// نافذة عرض كشف حركة الطقم في المخزن
   Future<void> _openMovementsModal(Map<String, dynamic> cat) async {
-    final movements = await StockMovementHelper.getMovementsForCategory(cat['id']);
+    final movements =
+        await StockMovementHelper.getMovementsForCategory(cat['id']);
 
     if (!mounted) return;
 
@@ -1062,11 +1125,15 @@ class _ShowroomStockTabState extends State<ShowroomStockTab> {
               children: [
                 Row(
                   children: [
-                    const Icon(Icons.receipt_long_rounded, color: AppTheme.primaryNavy, size: 24),
+                    const Icon(Icons.receipt_long_rounded,
+                        color: AppTheme.primaryNavy, size: 24),
                     const SizedBox(width: 8),
                     Text(
                       'كشف حركات طقم: ${cat['name']}',
-                      style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: AppTheme.primaryNavy),
+                      style: const TextStyle(
+                          fontSize: 17,
+                          fontWeight: FontWeight.bold,
+                          color: AppTheme.primaryNavy),
                     ),
                   ],
                 ),
@@ -1088,11 +1155,17 @@ class _ShowroomStockTabState extends State<ShowroomStockTab> {
                 children: [
                   Text(
                     'الرصيد الحالي بالمخزن: ${cat['stock_qty']} طقم',
-                    style: const TextStyle(fontWeight: FontWeight.bold, color: AppTheme.primaryNavy, fontSize: 14),
+                    style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: AppTheme.primaryNavy,
+                        fontSize: 14),
                   ),
                   Text(
                     'إجمالي الحركات: ${movements.length}',
-                    style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.brown, fontSize: 13),
+                    style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: Colors.brown,
+                        fontSize: 13),
                   ),
                 ],
               ),
@@ -1104,9 +1177,11 @@ class _ShowroomStockTabState extends State<ShowroomStockTab> {
                 child: Center(
                   child: Column(
                     children: [
-                      Icon(Icons.history_toggle_off_rounded, size: 48, color: Colors.grey),
+                      Icon(Icons.history_toggle_off_rounded,
+                          size: 48, color: Colors.grey),
                       SizedBox(height: 8),
-                      Text('لا توجد حركات مسجلة لهذا الطقم حتى الآن', style: TextStyle(color: Colors.grey)),
+                      Text('لا توجد حركات مسجلة لهذا الطقم حتى الآن',
+                          style: TextStyle(color: Colors.grey)),
                     ],
                   ),
                 ),
@@ -1175,7 +1250,8 @@ class _ShowroomStockTabState extends State<ShowroomStockTab> {
                       typeTitle = 'تعديل رصيد المخزن';
                     }
 
-                    final formattedDate12 = StockMovementHelper.formatDateString12(date);
+                    final formattedDate12 =
+                        StockMovementHelper.formatDateString12(date);
 
                     return Padding(
                       padding: const EdgeInsets.symmetric(vertical: 8),
@@ -1196,7 +1272,8 @@ class _ShowroomStockTabState extends State<ShowroomStockTab> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Row(
-                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
                                   children: [
                                     Text(
                                       typeTitle,
@@ -1208,10 +1285,12 @@ class _ShowroomStockTabState extends State<ShowroomStockTab> {
                                     ),
                                     if (change != 0)
                                       Container(
-                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                        padding: const EdgeInsets.symmetric(
+                                            horizontal: 8, vertical: 2),
                                         decoration: BoxDecoration(
                                           color: badgeBg,
-                                          borderRadius: BorderRadius.circular(6),
+                                          borderRadius:
+                                              BorderRadius.circular(6),
                                         ),
                                         child: Text(
                                           change > 0 ? '+$change' : '$change',
@@ -1227,15 +1306,19 @@ class _ShowroomStockTabState extends State<ShowroomStockTab> {
                                 const SizedBox(height: 3),
                                 Text(
                                   notes,
-                                  style: const TextStyle(fontSize: 13, color: Colors.black87),
+                                  style: const TextStyle(
+                                      fontSize: 13, color: Colors.black87),
                                 ),
                                 const SizedBox(height: 2),
                                 Row(
-                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
                                   children: [
                                     Text(
                                       '📅 $formattedDate12',
-                                      style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+                                      style: TextStyle(
+                                          fontSize: 11,
+                                          color: Colors.grey.shade600),
                                     ),
                                     Text(
                                       'رصيد الطقم: $after طقم',
@@ -1280,10 +1363,16 @@ class _ShowroomStockTabState extends State<ShowroomStockTab> {
           margin: const EdgeInsets.fromLTRB(12, 10, 12, 4),
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
           decoration: BoxDecoration(
-            color: isHistoricalMode ? (AppTheme.isDark(context) ? const Color(0xFF3A2A0A) : const Color(0xFFFFFBEB)) : AppTheme.cardBg(context),
+            color: isHistoricalMode
+                ? (AppTheme.isDark(context)
+                    ? const Color(0xFF3A2A0A)
+                    : const Color(0xFFFFFBEB))
+                : AppTheme.cardBg(context),
             borderRadius: BorderRadius.circular(12),
             border: Border.all(
-              color: isHistoricalMode ? AppTheme.warningBorder(context) : AppTheme.borderColor(context),
+              color: isHistoricalMode
+                  ? AppTheme.warningBorder(context)
+                  : AppTheme.borderColor(context),
               width: isHistoricalMode ? 1.5 : 1.0,
             ),
             boxShadow: [
@@ -1297,8 +1386,12 @@ class _ShowroomStockTabState extends State<ShowroomStockTab> {
           child: Row(
             children: [
               Icon(
-                isHistoricalMode ? Icons.history_toggle_off_rounded : Icons.calendar_month_rounded,
-                color: isHistoricalMode ? AppTheme.warningFg(context) : AppTheme.accentOnSurface(context),
+                isHistoricalMode
+                    ? Icons.history_toggle_off_rounded
+                    : Icons.calendar_month_rounded,
+                color: isHistoricalMode
+                    ? AppTheme.warningFg(context)
+                    : AppTheme.accentOnSurface(context),
                 size: 20,
               ),
               const SizedBox(width: 8),
@@ -1311,20 +1404,28 @@ class _ShowroomStockTabState extends State<ShowroomStockTab> {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Text(
-                        isHistoricalMode ? 'وضع المخزن كما كان بنهاية تاريخ:' : 'استعادة وضع المخزن بتاريخ سابق:',
+                        isHistoricalMode
+                            ? 'وضع المخزن كما كان بنهاية تاريخ:'
+                            : 'استعادة وضع المخزن بتاريخ سابق:',
                         style: TextStyle(
                           fontSize: 11,
                           fontWeight: FontWeight.w600,
-                          color: isHistoricalMode ? AppTheme.warningFg(context) : AppTheme.textMuted(context),
+                          color: isHistoricalMode
+                              ? AppTheme.warningFg(context)
+                              : AppTheme.textMuted(context),
                         ),
                       ),
                       const SizedBox(height: 1),
                       Text(
-                        isHistoricalMode ? dateFormatted : 'اضغط لاختيار تاريخ سابق',
+                        isHistoricalMode
+                            ? dateFormatted
+                            : 'اضغط لاختيار تاريخ سابق',
                         style: TextStyle(
                           fontSize: 13,
                           fontWeight: FontWeight.bold,
-                          color: isHistoricalMode ? AppTheme.warningFg(context) : AppTheme.textPrimary(context),
+                          color: isHistoricalMode
+                              ? AppTheme.warningFg(context)
+                              : AppTheme.textPrimary(context),
                         ),
                       ),
                     ],
@@ -1335,31 +1436,41 @@ class _ShowroomStockTabState extends State<ShowroomStockTab> {
                 const SizedBox(
                   width: 20,
                   height: 20,
-                  child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFFD97706)),
+                  child: CircularProgressIndicator(
+                      strokeWidth: 2, color: Color(0xFFD97706)),
                 )
               else if (isHistoricalMode)
                 TextButton.icon(
                   style: TextButton.styleFrom(
                     foregroundColor: Colors.red.shade700,
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                     visualDensity: VisualDensity.compact,
                   ),
                   onPressed: _clearDateFilter,
                   icon: const Icon(Icons.close_rounded, size: 16),
-                  label: const Text('إلغاء الفلتر', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11.5)),
+                  label: const Text('إلغاء الفلتر',
+                      style: TextStyle(
+                          fontWeight: FontWeight.bold, fontSize: 11.5)),
                 )
               else
                 OutlinedButton.icon(
                   style: OutlinedButton.styleFrom(
                     foregroundColor: AppTheme.accentOnSurface(context),
-                    side: BorderSide(color: AppTheme.accentOnSurface(context).withValues(alpha: 0.55)),
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    side: BorderSide(
+                        color: AppTheme.accentOnSurface(context)
+                            .withValues(alpha: 0.55)),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                     visualDensity: VisualDensity.compact,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8)),
                   ),
                   onPressed: _pickHistoryDate,
                   icon: const Icon(Icons.date_range_rounded, size: 16),
-                  label: const Text('تحديد تاريخ', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11.5)),
+                  label: const Text('تحديد تاريخ',
+                      style: TextStyle(
+                          fontWeight: FontWeight.bold, fontSize: 11.5)),
                 ),
             ],
           ),
@@ -1376,12 +1487,16 @@ class _ShowroomStockTabState extends State<ShowroomStockTab> {
             ),
             child: Row(
               children: [
-                const Icon(Icons.info_outline_rounded, size: 14, color: Color(0xFF92400E)),
+                const Icon(Icons.info_outline_rounded,
+                    size: 14, color: Color(0xFF92400E)),
                 const SizedBox(width: 6),
                 Expanded(
                   child: Text(
                     'أرقام المخزون المعروضة حالياً تعكس الوضع في نهاية $dateFormatted بناءً على سجل الحركات.',
-                    style: const TextStyle(fontSize: 11, color: Color(0xFF92400E), fontWeight: FontWeight.bold),
+                    style: const TextStyle(
+                        fontSize: 11,
+                        color: Color(0xFF92400E),
+                        fontWeight: FontWeight.bold),
                   ),
                 ),
               ],
@@ -1491,7 +1606,8 @@ class _ShowroomStockTabState extends State<ShowroomStockTab> {
                   )
                 : ListView.builder(
                     physics: const AlwaysScrollableScrollPhysics(),
-                    padding: const EdgeInsets.only(left: 12, right: 12, top: 8, bottom: 80),
+                    padding: const EdgeInsets.only(
+                        left: 12, right: 12, top: 8, bottom: 80),
                     itemCount: effectiveCategories.length,
                     itemBuilder: (ctx, i) {
                       final cat = effectiveCategories[i];
@@ -2053,9 +2169,9 @@ class _ShowroomStockTabState extends State<ShowroomStockTab> {
               );
             },
           ),
+          ),
         ),
-      ),
-    ],
-  );
-}
+      ],
+    );
+  }
 }
