@@ -212,8 +212,7 @@ class CloudService {
       } catch (_) {}
     }
 
-    // 4. المفتاح العام الافتراضي لمشروع FurniFlow لضمان استمرارية الخدمة
-    return 'sb_publishable_GpycTI3LREiL6cKmFSNOnw_gQBKgKIj';
+    return '';
   }
 
   /// تعيين مفتاح Anon Key مخصص

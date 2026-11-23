@@ -38,7 +38,8 @@ jobs:
           CLEAN_SB_URL=$(printf '%s' "$SB_URL" | tr -d '\r\n ')
           CLEAN_SB_KEY=$(printf '%s' "$SB_KEY" | tr -d '\r\n ')
           if [ -z "$CLEAN_SB_KEY" ]; then
-            CLEAN_SB_KEY="sb_publishable_GpycTI3LREiL6cKmFSNOnw_gQBKgKIj"
+            echo "::error::SUPABASE_ANON_KEY is missing! Please configure SUPABASE_ANON_KEY in GitHub Repo Settings -> Secrets and variables -> Actions."
+            exit 1
           fi
           if [ -z "$CLEAN_SB_URL" ]; then
             CLEAN_SB_URL="https://httdsktwfnrkhhlcznzo.supabase.co"
