@@ -591,17 +591,21 @@ class _UpholstererScreenState extends State<UpholstererScreen>
     final workshopPieces = _buildCategoryWorkshopPieces(category, batch);
     final catComps = CategoryStockHelper.getMainComponents(category['components_json']);
 
-    final remBreakdown = CategoryStockHelper.computeBreakdownFromPieces(
+    final sentBreakdown = CategoryStockHelper.computeBreakdownFromPieces(
       workshopPieces,
       qtyKey: 'sent_qty',
-      subtractKey: 'received_qty',
+      expectedComponentCount: catComps.length,
+    );
+    final recBreakdown = CategoryStockHelper.computeBreakdownFromPieces(
+      workshopPieces,
+      qtyKey: 'received_qty',
       expectedComponentCount: catComps.length,
     );
 
-    if (isReceive && remBreakdown.totalPieces <= 0) {
+    if (isReceive && sentBreakdown.totalPieces <= 0) {
       AppNotification.showInfo(
         context,
-        'لا يوجد رصيد متبقٍ من طقم "$catName" لدى المنجد لاستلامه حالياً.',
+        'لا يوجد رصيد تم تسليمه من طقم "$catName" لدى المنجد لتعديل استلامه حالياً.',
       );
       return;
     }
@@ -614,28 +618,29 @@ class _UpholstererScreenState extends State<UpholstererScreen>
         ? previousUpholsterersForCategory
         : (isReceive ? allPreviousUpholsterers : allPreviousUpholsterers);
 
-    // الحقل دائماً فارغ مطلوب إدخاله أو اختياره
-    final uphNameCtrl = TextEditingController(text: '');
+    // ملء اسم المنجد المسجل سابقاً إن وجد
+    final existingUph = batch != null ? (batch['upholsterer_name'] ?? '').toString().trim() : '';
+    final uphNameCtrl = TextEditingController(
+      text: existingUph.isNotEmpty && existingUph != 'ورشة التنجيد' && existingUph != 'ورشه التنجيد'
+          ? existingUph
+          : '',
+    );
     String? uphError;
 
-    int setsCount = isReceive ? (remBreakdown.completeSets > 0 ? 1 : 0) : 1;
+    int setsCount = isReceive ? recBreakdown.completeSets : sentBreakdown.completeSets;
     final setsCtrl = TextEditingController(text: '$setsCount');
 
     final List<_PieceInputItem> pieceItems = workshopPieces.map((wp) {
       final pName = (wp['name'] ?? '').toString();
       final baseQ = math.max(1, CategoryStockHelper.parseInt(wp['base_qty'], fallback: 1));
-      final remQ = math.max(
-        0,
-        CategoryStockHelper.parseInt(wp['sent_qty']) - CategoryStockHelper.parseInt(wp['received_qty']),
-      );
-      final int initialQ = isReceive
-          ? math.min(remQ, setsCount * baseQ)
-          : setsCount * baseQ;
+      final sentQ = CategoryStockHelper.parseInt(wp['sent_qty']);
+      final recQ = CategoryStockHelper.parseInt(wp['received_qty']);
+      final int initialQ = isReceive ? recQ : sentQ;
       return _PieceInputItem(
         name: pName,
         baseQty: baseQ,
         initialQty: initialQ,
-        maxAllowed: isReceive ? remQ : -1,
+        maxAllowed: isReceive ? (sentQ > 0 ? sentQ : -1) : -1,
       );
     }).toList();
 
@@ -652,8 +657,8 @@ class _UpholstererScreenState extends State<UpholstererScreen>
         builder: (ctx, setModalState) {
           void syncSets(int n) {
             int clamped = n < 0 ? 0 : n;
-            if (isReceive && clamped > remBreakdown.completeSets) {
-              clamped = remBreakdown.completeSets;
+            if (isReceive && clamped > sentBreakdown.completeSets) {
+              clamped = sentBreakdown.completeSets;
             }
             setsCount = clamped;
             setsCtrl.text = '$setsCount';
@@ -751,7 +756,7 @@ class _UpholstererScreenState extends State<UpholstererScreen>
                         fit: BoxFit.scaleDown,
                         alignment: AlignmentDirectional.centerStart,
                         child: Text(
-                          'المتبقي لدى المنجد: ${CategoryStockHelper.formatSetsAndIndividual(remBreakdown.completeSets, remBreakdown.individualPieces)} (${remBreakdown.totalPieces} قطعة)',
+                          'المسلّم لدى المنجد: ${CategoryStockHelper.formatSetsAndIndividual(sentBreakdown.completeSets, sentBreakdown.individualPieces)} (${sentBreakdown.totalPieces} قطعة)',
                           maxLines: 1,
                           style: TextStyle(
                             fontSize: 12.5,
@@ -853,7 +858,7 @@ class _UpholstererScreenState extends State<UpholstererScreen>
                               ),
                               if (isReceive)
                                 Text(
-                                  'أقصى عدد أطقم مكتملة: ${remBreakdown.completeSets}',
+                                  'أقصى عدد أطقم مكتملة مسلّمة: ${sentBreakdown.completeSets}',
                                   maxLines: 1,
                                   style: TextStyle(fontSize: 11, color: AppTheme.textMuted(ctx)),
                                 ),
@@ -901,7 +906,7 @@ class _UpholstererScreenState extends State<UpholstererScreen>
                           borderRadius: BorderRadius.circular(10),
                           child: InkWell(
                             borderRadius: BorderRadius.circular(10),
-                            onTap: (!isReceive || setsCount < remBreakdown.completeSets)
+                            onTap: (!isReceive || setsCount < sentBreakdown.completeSets)
                                 ? () => setModalState(() => syncSets(setsCount + 1))
                                 : null,
                             child: const Padding(
@@ -1064,7 +1069,7 @@ class _UpholstererScreenState extends State<UpholstererScreen>
                       padding: const EdgeInsets.symmetric(vertical: 14),
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                     ),
-                    onPressed: (isSaving || liveBreak.totalPieces <= 0)
+                    onPressed: isSaving
                         ? null
                         : () async {
                             final rawUphName = uphNameCtrl.text.trim();
@@ -1095,18 +1100,11 @@ class _UpholstererScreenState extends State<UpholstererScreen>
                               if (isReceive && p.maxAllowed >= 0 && q > p.maxAllowed) {
                                 q = p.maxAllowed;
                               }
-                              if (q > 0) {
-                                selectedPieces.add({
-                                  'name': p.name,
-                                  'qty': q,
-                                  'base_qty': p.baseQty,
-                                });
-                              }
-                            }
-
-                            if (selectedPieces.isEmpty) {
-                              setModalState(() => isSaving = false);
-                              return;
+                              selectedPieces.add({
+                                'name': p.name,
+                                'qty': q,
+                                'base_qty': p.baseQty,
+                              });
                             }
 
                             final ok = isReceive
@@ -1182,18 +1180,20 @@ class _UpholstererScreenState extends State<UpholstererScreen>
 
       for (final sp in sentPieces) {
         final pName = (sp['name'] ?? '').toString().trim();
-        final addQty = CategoryStockHelper.parseInt(sp['qty']);
+        final newQty = CategoryStockHelper.parseInt(sp['qty']);
         final bQty = math.max(1, CategoryStockHelper.parseInt(sp['base_qty'], fallback: 1));
         final idx = mergedPieces.indexWhere((m) => (m['name'] ?? '').toString().trim() == pName);
         if (idx != -1) {
-          mergedPieces[idx]['sent_qty'] =
-              CategoryStockHelper.parseInt(mergedPieces[idx]['sent_qty']) + addQty;
+          mergedPieces[idx]['sent_qty'] = newQty;
           mergedPieces[idx]['sent_date'] = today;
+          if (CategoryStockHelper.parseInt(mergedPieces[idx]['received_qty']) > newQty) {
+            mergedPieces[idx]['received_qty'] = newQty;
+          }
         } else {
           mergedPieces.add({
             'name': pName,
             'base_qty': bQty,
-            'sent_qty': addQty,
+            'sent_qty': newQty,
             'received_qty': 0,
             'sent_date': today,
             'received_date': null,
@@ -1318,15 +1318,26 @@ class _UpholstererScreenState extends State<UpholstererScreen>
       );
 
       final mergedPieces = _buildCategoryWorkshopPieces(category, existingBatch);
+      final List<Map<String, dynamic>> receiveDeltas = [];
+
       for (final rp in receivedPieces) {
         final pName = (rp['name'] ?? '').toString().trim();
-        final addRec = CategoryStockHelper.parseInt(rp['qty']);
+        final targetRec = CategoryStockHelper.parseInt(rp['qty']);
+        final bQty = math.max(1, CategoryStockHelper.parseInt(rp['base_qty'], fallback: 1));
         final idx = mergedPieces.indexWhere((m) => (m['name'] ?? '').toString().trim() == pName);
         if (idx != -1) {
           final maxSent = CategoryStockHelper.parseInt(mergedPieces[idx]['sent_qty']);
           final curRec = CategoryStockHelper.parseInt(mergedPieces[idx]['received_qty']);
-          mergedPieces[idx]['received_qty'] = math.min(maxSent, curRec + addRec);
+          final clampedNewRec = maxSent > 0 ? math.min(maxSent, targetRec) : targetRec;
+          final int delta = clampedNewRec - curRec;
+          mergedPieces[idx]['received_qty'] = clampedNewRec;
           mergedPieces[idx]['received_date'] = today;
+          receiveDeltas.add({
+            'name': pName,
+            'base_qty': bQty,
+            'delta': delta,
+            'qty': clampedNewRec,
+          });
         }
       }
 
@@ -1377,15 +1388,15 @@ class _UpholstererScreenState extends State<UpholstererScreen>
         if (catRows.isNotEmpty) {
           oldStockSets = CategoryStockHelper.parseInt(catRows.first['stock_qty']);
           final updatedCatComps = CategoryStockHelper.parseComponents(catRows.first['components_json']);
-          for (final rp in receivedPieces) {
-            final pName = (rp['name'] ?? '').toString().trim();
-            final addQ = CategoryStockHelper.parseInt(rp['qty']);
-            final bQ = math.max(1, CategoryStockHelper.parseInt(rp['base_qty'], fallback: 1));
+          for (final rd in receiveDeltas) {
+            final pName = (rd['name'] ?? '').toString().trim();
+            final delta = rd['delta'] as int;
+            final bQ = math.max(1, CategoryStockHelper.parseInt(rd['base_qty'], fallback: 1));
             final cIdx = updatedCatComps.indexWhere((c) => (c['name'] ?? '').toString().trim() == pName);
             if (cIdx != -1) {
-              updatedCatComps[cIdx]['qty'] = CategoryStockHelper.parseInt(updatedCatComps[cIdx]['qty']) + addQ;
-            } else {
-              updatedCatComps.add({'name': pName, 'base_qty': bQ, 'qty': addQ});
+              updatedCatComps[cIdx]['qty'] = math.max(0, CategoryStockHelper.parseInt(updatedCatComps[cIdx]['qty']) + delta);
+            } else if (delta > 0) {
+              updatedCatComps.add({'name': pName, 'base_qty': bQ, 'qty': delta});
             }
           }
           newStockSets = CategoryStockHelper.computeBreakdownFromPieces(
@@ -1403,23 +1414,22 @@ class _UpholstererScreenState extends State<UpholstererScreen>
         }
       });
 
-      final piecesDelta = receivedPieces
-          .map((rp) => {
-                'name': (rp['name'] ?? '').toString().trim(),
-                'delta': CategoryStockHelper.parseInt(rp['qty']),
-              })
-          .toList();
-
-      await StockMovementHelper.logMovement(
-        categoryId: catId,
-        categoryName: catName,
-        movementType: 'upholsterer_in',
-        qtyChange: newStockSets - oldStockSets,
-        stockAfter: newStockSets,
-        piecesDelta: piecesDelta,
-        notes:
-            'استلام من المنجد ($upholstererName): ${CategoryStockHelper.formatSetsAndIndividual(recBreak.completeSets, recBreak.individualPieces)}',
-      );
+      final nonZeroDeltas = receiveDeltas.where((rd) => (rd['delta'] as int) != 0).toList();
+      if (nonZeroDeltas.isNotEmpty) {
+        await StockMovementHelper.logMovement(
+          categoryId: catId,
+          categoryName: catName,
+          movementType: 'upholsterer_in',
+          qtyChange: newStockSets - oldStockSets,
+          stockAfter: newStockSets,
+          piecesDelta: nonZeroDeltas.map((rd) => {
+            'name': rd['name'],
+            'delta': rd['delta'],
+          }).toList(),
+          notes:
+              'استلام / تعديل مدخلات من المنجد ($upholstererName): ${CategoryStockHelper.formatSetsAndIndividual(recBreak.completeSets, recBreak.individualPieces)}',
+        );
+      }
 
       AppEvents.instance.notifyAll();
       if (mounted) {
@@ -1679,31 +1689,7 @@ class _UpholstererScreenState extends State<UpholstererScreen>
                               ),
                               const SizedBox(width: 2),
 
-                              // زر القلم لتعديل المدخلات (يظهر عند توسع الكارد)
-                              if (isExpanded) ...[
-                                IconButton(
-                                  padding: EdgeInsets.zero,
-                                  constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-                                  tooltip: isReceiveTab ? 'تعديل مدخلات الاستلام' : 'تعديل مدخلات التسليم',
-                                  icon: Container(
-                                    padding: const EdgeInsets.all(5),
-                                    decoration: BoxDecoration(
-                                      color: (isReceiveTab ? Colors.green : AppTheme.primaryNavy).withValues(alpha: 0.12),
-                                      borderRadius: BorderRadius.circular(8),
-                                    ),
-                                    child: Icon(
-                                      Icons.edit_rounded,
-                                      color: isReceiveTab ? Colors.green.shade700 : AppTheme.primaryNavy,
-                                      size: 18,
-                                    ),
-                                  ),
-                                  onPressed: () => _openActionModal(
-                                    category: cat,
-                                    isReceive: isReceiveTab,
-                                  ),
-                                ),
-                                const SizedBox(width: 2),
-                              ],
+
 
                               // 5. سهم التوسيع لعرض ملخص التسليم لهذا الطقم
                               IconButton(

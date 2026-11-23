@@ -404,7 +404,6 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
             key: ValueKey('cust_${_selectedCustomerId ?? 'none'}'),
             value: _selectedCustomerId,
             labelText: 'اسم الزبون / العميل *',
-            hintText: 'ابحث بالاسم أو رقم الهاتف لاختيار العميل',
             searchHint: 'اكتب اسم العميل أو الهاتف للتصفية السريعة...',
             prefixIcon: const Icon(Icons.person, color: AppTheme.primaryNavy),
             items: _customers.map((c) {
@@ -435,7 +434,6 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
             key: ValueKey('primary_cat_${_selectedCategoryId ?? 'none'}'),
             value: _selectedCategoryId,
             labelText: 'اسم الطقم (الصنف) *',
-            hintText: 'ابحث بالاسم لاختيار الصنف وعرض قطعه',
             searchHint: 'اكتب اسم الصنف للبحث السريع...',
             prefixIcon: const Icon(Icons.weekend, color: AppTheme.primaryNavy),
             items: _categories.map((c) {
@@ -690,8 +688,8 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
                         final int baseQty = (comp['base_qty'] as int?) ?? 1;
 
                         return Container(
-                          margin: const EdgeInsets.symmetric(vertical: 5),
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                          margin: const EdgeInsets.symmetric(vertical: 3),
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                           decoration: BoxDecoration(
                             color: isTable
                                 ? const Color(0xFFF0FDFA)
@@ -702,7 +700,7 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
                                         : (isSelected
                                             ? AppTheme.royalGold.withValues(alpha: 0.12)
                                             : Colors.white))),
-                            borderRadius: BorderRadius.circular(12),
+                            borderRadius: BorderRadius.circular(10),
                             border: Border.all(
                               color: isTable
                                   ? const Color(0xFF0D9488)
@@ -720,77 +718,83 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
                                 BoxShadow(
                                   color: (isTable || isFromOtherCat ? const Color(0xFF0D9488) : AppTheme.royalGold)
                                       .withValues(alpha: 0.08),
-                                  blurRadius: 4,
-                                  offset: const Offset(0, 2),
+                                  blurRadius: 3,
+                                  offset: const Offset(0, 1),
                                 ),
                             ],
                           ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.center,
                             children: [
-                              // السطر الأول: شيك بوكس + اسم القطعة بكامل العرض + شارة الطقم + زر الحذف
-                              Row(
-                                children: [
-                                  InkWell(
-                                    borderRadius: BorderRadius.circular(6),
-                                    onTap: () {
-                                      setState(() {
-                                        final bool check = !isSelected;
-                                        comp['selected'] = check;
-                                        if (check && comp['qty'] == 0) {
-                                          comp['qty'] = isCustom
-                                              ? 1
-                                              : (baseQty * (_orderSetsCount > 0 ? _orderSetsCount : 1));
-                                        } else if (!check) {
-                                          comp['qty'] = 0;
-                                        }
-                                      });
-                                    },
-                                    child: Padding(
-                                      padding: const EdgeInsets.all(4.0),
-                                      child: Icon(
-                                        isSelected
-                                            ? Icons.check_box_rounded
-                                            : Icons.check_box_outline_blank_rounded,
-                                        color: isSelected
-                                            ? (isTable ? const Color(0xFF0D9488) : AppTheme.primaryNavy)
-                                            : Colors.grey.shade400,
-                                        size: 24,
-                                      ),
-                                    ),
+                              // 1. شيك بوكس
+                              InkWell(
+                                borderRadius: BorderRadius.circular(6),
+                                onTap: () {
+                                  setState(() {
+                                    final bool check = !isSelected;
+                                    comp['selected'] = check;
+                                    if (check && comp['qty'] == 0) {
+                                      comp['qty'] = isCustom
+                                          ? 1
+                                          : (baseQty * (_orderSetsCount > 0 ? _orderSetsCount : 1));
+                                    } else if (!check) {
+                                      comp['qty'] = 0;
+                                    }
+                                  });
+                                },
+                                child: Padding(
+                                  padding: const EdgeInsets.all(2.0),
+                                  child: Icon(
+                                    isSelected
+                                        ? Icons.check_box_rounded
+                                        : Icons.check_box_outline_blank_rounded,
+                                    color: isSelected
+                                        ? (isTable ? const Color(0xFF0D9488) : AppTheme.primaryNavy)
+                                        : Colors.grey.shade400,
+                                    size: 21,
                                   ),
-                                  const SizedBox(width: 8),
-                                  Expanded(
-                                    child: Wrap(
-                                      crossAxisAlignment: WrapCrossAlignment.center,
-                                      spacing: 6,
-                                      runSpacing: 4,
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+
+                              // 2. اسم القطعة + الشارات + النسبة
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Row(
                                       children: [
-                                        Text(
-                                          comp['name'],
-                                          style: TextStyle(
-                                            fontWeight: FontWeight.bold,
-                                            fontSize: 15,
-                                            color: isSelected ? Colors.black87 : Colors.grey.shade700,
+                                        Expanded(
+                                          child: Text(
+                                            comp['name'],
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: TextStyle(
+                                              fontWeight: FontWeight.bold,
+                                              fontSize: 13.5,
+                                              color: isSelected ? Colors.black87 : Colors.grey.shade700,
+                                            ),
                                           ),
                                         ),
                                         if (isTable)
                                           Container(
-                                            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
+                                            margin: const EdgeInsetsDirectional.only(start: 4),
+                                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                                             decoration: BoxDecoration(
                                               color: const Color(0xFFCCFBF1),
-                                              borderRadius: BorderRadius.circular(8),
+                                              borderRadius: BorderRadius.circular(6),
                                               border: Border.all(color: const Color(0xFF5EEAD4)),
                                             ),
                                             child: const Row(
                                               mainAxisSize: MainAxisSize.min,
                                               children: [
-                                                Icon(Icons.table_restaurant_rounded, size: 12, color: Color(0xFF0D9488)),
-                                                SizedBox(width: 4),
+                                                Icon(Icons.table_restaurant_rounded, size: 11, color: Color(0xFF0D9488)),
+                                                SizedBox(width: 3),
                                                 Text(
-                                                  'طقم ترابيزات',
+                                                  'ترابيزة',
                                                   style: TextStyle(
-                                                    fontSize: 11,
+                                                    fontSize: 10,
                                                     fontWeight: FontWeight.bold,
                                                     color: Color(0xFF0F766E),
                                                   ),
@@ -800,16 +804,19 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
                                           )
                                         else if (isFromOtherCat)
                                           Container(
-                                            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
+                                            margin: const EdgeInsetsDirectional.only(start: 4),
+                                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                                             decoration: BoxDecoration(
                                               color: const Color(0xFFCCFBF1),
-                                              borderRadius: BorderRadius.circular(8),
+                                              borderRadius: BorderRadius.circular(6),
                                               border: Border.all(color: const Color(0xFF5EEAD4)),
                                             ),
                                             child: Text(
-                                              'من طقم: ${comp['source_category_name']}',
+                                              'من: ${comp['source_category_name']}',
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
                                               style: const TextStyle(
-                                                fontSize: 11,
+                                                fontSize: 10,
                                                 fontWeight: FontWeight.bold,
                                                 color: Color(0xFF0F766E),
                                               ),
@@ -817,15 +824,16 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
                                           )
                                         else if (isCustom)
                                           Container(
-                                            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
+                                            margin: const EdgeInsetsDirectional.only(start: 4),
+                                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                                             decoration: BoxDecoration(
                                               color: Colors.blue.shade100,
-                                              borderRadius: BorderRadius.circular(8),
+                                              borderRadius: BorderRadius.circular(6),
                                             ),
                                             child: const Text(
-                                              'إضافية مخصصة',
+                                              'إضافية',
                                               style: TextStyle(
-                                                fontSize: 11,
+                                                fontSize: 10,
                                                 fontWeight: FontWeight.bold,
                                                 color: Colors.blue,
                                               ),
@@ -833,106 +841,104 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
                                           ),
                                       ],
                                     ),
-                                  ),
-                                  if (isCustom || isTable)
-                                    IconButton(
-                                      icon: const Icon(Icons.delete_outline, color: Colors.red, size: 21),
-                                      tooltip: isTable ? 'إزالة هذه الترابيزة من الطلب' : 'حذف هذه القطعة',
-                                      padding: EdgeInsets.zero,
-                                      constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-                                      onPressed: () {
-                                        setState(() {
-                                          _editableComponents.removeAt(idx);
-                                          if (isTable && !_editableComponents.any((c) => c['is_table'] == true)) {
-                                            _includeTables = false;
-                                          }
-                                        });
-                                      },
-                                    ),
-                                ],
-                              ),
-                              const SizedBox(height: 6),
-                              // السطر الثاني: الوصف التوضيحي + عداد الكمية (+ / -)
-                              Row(
-                                crossAxisAlignment: CrossAxisAlignment.center,
-                                children: [
-                                  const SizedBox(width: 36),
-                                  Expanded(
-                                    child: Text(
+                                    const SizedBox(height: 2),
+                                    Text(
                                       isTable
-                                          ? 'قطعة ترابيزة (النسبة لكل طقم: $baseQty قطعة)'
+                                          ? 'النسبة: $baseQty لكل طقم'
                                           : (isFromOtherCat
-                                              ? 'قطعة فردية تُخصم من مخزون (${comp['source_category_name']}) عند التسليم'
+                                              ? 'تُخصم من (${comp['source_category_name']})'
                                               : (isCustom
-                                                  ? 'قطعة إضافية مخصصة للطلب'
+                                                  ? 'قطعة إضافية مخصصة'
                                                   : 'النسبة لكل طقم: $baseQty قطعة')),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
                                       style: TextStyle(
-                                        fontSize: 11.5,
+                                        fontSize: 10.5,
                                         color: (isTable || isFromOtherCat) ? const Color(0xFF0F766E) : Colors.grey.shade600,
                                         fontWeight: (isTable || isFromOtherCat) ? FontWeight.w600 : FontWeight.normal,
                                       ),
                                     ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+
+                              // 3. أزرار التحكم بالعدد
+                              Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Material(
+                                    color: Colors.red.shade50,
+                                    borderRadius: BorderRadius.circular(6),
+                                    child: InkWell(
+                                      borderRadius: BorderRadius.circular(6),
+                                      onTap: () {
+                                        setState(() {
+                                          if (comp['qty'] > 0) {
+                                            comp['qty']--;
+                                            if (comp['qty'] == 0) {
+                                              comp['selected'] = false;
+                                            }
+                                          }
+                                        });
+                                      },
+                                      child: const Padding(
+                                        padding: EdgeInsets.all(4.0),
+                                        child: Icon(Icons.remove, color: Colors.red, size: 16),
+                                      ),
+                                    ),
                                   ),
-                                  const SizedBox(width: 8),
-                                  // أزرار التحكم بالعدد
-                                  Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Material(
-                                        color: Colors.red.shade50,
-                                        borderRadius: BorderRadius.circular(8),
-                                        child: InkWell(
-                                          borderRadius: BorderRadius.circular(8),
-                                          onTap: () {
-                                            setState(() {
-                                              if (comp['qty'] > 0) {
-                                                comp['qty']--;
-                                                if (comp['qty'] == 0) {
-                                                  comp['selected'] = false;
-                                                }
-                                              }
-                                            });
-                                          },
-                                          child: const Padding(
-                                            padding: EdgeInsets.all(7.0),
-                                            child: Icon(Icons.remove, color: Colors.red, size: 18),
-                                          ),
-                                        ),
+                                  Container(
+                                    constraints: const BoxConstraints(minWidth: 28),
+                                    alignment: Alignment.center,
+                                    padding: const EdgeInsets.symmetric(horizontal: 2),
+                                    child: Text(
+                                      '${comp['qty']}',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 15,
+                                        color: hasQty ? AppTheme.primaryNavy : Colors.grey,
                                       ),
-                                      Container(
-                                        constraints: const BoxConstraints(minWidth: 34),
-                                        alignment: Alignment.center,
-                                        padding: const EdgeInsets.symmetric(horizontal: 4),
-                                        child: Text(
-                                          '${comp['qty']}',
-                                          style: TextStyle(
-                                            fontWeight: FontWeight.bold,
-                                            fontSize: 17,
-                                            color: hasQty ? AppTheme.primaryNavy : Colors.grey,
-                                          ),
-                                        ),
+                                    ),
+                                  ),
+                                  Material(
+                                    color: Colors.green.shade50,
+                                    borderRadius: BorderRadius.circular(6),
+                                    child: InkWell(
+                                      borderRadius: BorderRadius.circular(6),
+                                      onTap: () {
+                                        setState(() {
+                                          comp['qty']++;
+                                          comp['selected'] = true;
+                                        });
+                                      },
+                                      child: const Padding(
+                                        padding: EdgeInsets.all(4.0),
+                                        child: Icon(Icons.add, color: Colors.green, size: 16),
                                       ),
-                                      Material(
-                                        color: Colors.green.shade50,
-                                        borderRadius: BorderRadius.circular(8),
-                                        child: InkWell(
-                                          borderRadius: BorderRadius.circular(8),
-                                          onTap: () {
-                                            setState(() {
-                                              comp['qty']++;
-                                              comp['selected'] = true;
-                                            });
-                                          },
-                                          child: const Padding(
-                                            padding: EdgeInsets.all(7.0),
-                                            child: Icon(Icons.add, color: Colors.green, size: 18),
-                                          ),
-                                        ),
-                                      ),
-                                    ],
+                                    ),
                                   ),
                                 ],
                               ),
+
+                              // 4. زر حذف القطعة الإضافية أو الترابيزة إن وجدت
+                              if (isCustom || isTable) ...[
+                                const SizedBox(width: 4),
+                                IconButton(
+                                  icon: const Icon(Icons.delete_outline, color: Colors.red, size: 18),
+                                  tooltip: isTable ? 'إزالة هذه الترابيزة من الطلب' : 'حذف هذه القطعة',
+                                  padding: EdgeInsets.zero,
+                                  constraints: const BoxConstraints(minWidth: 26, minHeight: 26),
+                                  onPressed: () {
+                                    setState(() {
+                                      _editableComponents.removeAt(idx);
+                                      if (isTable && !_editableComponents.any((c) => c['is_table'] == true)) {
+                                        _includeTables = false;
+                                      }
+                                    });
+                                  },
+                                ),
+                              ],
                             ],
                           ),
                         );
@@ -983,6 +989,24 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
                             secCat: secCat,
                             pieceName: pieceName,
                             newQty: newQty,
+                          );
+                        });
+                      },
+                      onSecondarySetsChanged: (secCat, newSets) {
+                        setState(() {
+                          SecondaryCategoryPickerSection.applySecondarySetsCount(
+                            editableComponents: _editableComponents,
+                            secCat: secCat,
+                            newSetsCount: newSets,
+                          );
+                        });
+                      },
+                      onSecondaryTablesChanged: (secCat, include) {
+                        setState(() {
+                          SecondaryCategoryPickerSection.applySecondaryTableSet(
+                            editableComponents: _editableComponents,
+                            secCat: secCat,
+                            include: include,
                           );
                         });
                       },

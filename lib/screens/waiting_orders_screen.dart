@@ -531,6 +531,24 @@ class _WaitingOrdersScreenState extends State<WaitingOrdersScreen> {
                       );
                     });
                   },
+                  onSecondarySetsChanged: (secCat, newSets) {
+                    setModalState(() {
+                      SecondaryCategoryPickerSection.applySecondarySetsCount(
+                        editableComponents: editableComps,
+                        secCat: secCat,
+                        newSetsCount: newSets,
+                      );
+                    });
+                  },
+                  onSecondaryTablesChanged: (secCat, include) {
+                    setModalState(() {
+                      SecondaryCategoryPickerSection.applySecondaryTableSet(
+                        editableComponents: editableComps,
+                        secCat: secCat,
+                        include: include,
+                      );
+                    });
+                  },
                 ),
                 const SizedBox(height: 12),
                 Row(
