@@ -79,9 +79,46 @@
 
     <!-- Top Toast Notification -->
     <div id="toast" class="fixed top-5 left-1/2 -translate-x-1/2 z-50 hidden transition-all duration-300">
-        <div id="toastContent" class="flex items-center gap-3 px-5 py-3 rounded-xl shadow-2xl text-sm font-bold border">
-            <i id="toastIcon" class="fa-solid fa-circle-check text-lg"></i>
+        <div id="toastContent" class="flex items-center gap-3 px-5 py-3 rounded-2xl shadow-2xl text-xs sm:text-sm font-bold border backdrop-blur-md">
+            <i id="toastIcon" class="fa-solid fa-circle-check text-base sm:text-lg"></i>
             <span id="toastMsg">تم الإجراء بنجاح</span>
+            <button type="button" onclick="document.getElementById('toast').classList.add('hidden')" class="mr-2 text-slate-400 hover:text-white transition-colors cursor-pointer text-xs">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+        </div>
+    </div>
+
+    <!-- ============================================================== -->
+    <!-- CUSTOM LUXURY MODAL (REPLACES BROWSER ALERTS & CONFIRMS) -->
+    <!-- ============================================================== -->
+    <div id="customModal" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-navy-950/85 backdrop-blur-md hidden transition-all duration-300">
+        <div id="customModalCard" class="w-full max-w-md bg-navy-900 border border-slate-700/80 rounded-3xl p-6 sm:p-7 shadow-2xl relative overflow-hidden transform scale-95 transition-all duration-200">
+            <!-- Glow Accent -->
+            <div id="modalGlow" class="absolute -top-16 -right-16 w-40 h-40 bg-gold-500/15 rounded-full blur-3xl pointer-events-none"></div>
+
+            <div class="text-center">
+                <!-- Icon Badge -->
+                <div id="modalIconWrap" class="w-16 h-16 mx-auto mb-4 rounded-2xl flex items-center justify-center text-2xl border shadow-inner transition-all">
+                    <i id="modalIcon" class="fa-solid fa-triangle-exclamation"></i>
+                </div>
+
+                <!-- Title & Body -->
+                <h3 id="modalTitle" class="text-lg font-black text-white mb-2">تأكيد الإجراء</h3>
+                <div id="modalBody" class="text-xs sm:text-sm text-slate-300 leading-relaxed mb-6 space-y-2"></div>
+
+                <!-- Extra Custom HTML (e.g. license key with copy button) -->
+                <div id="modalExtra" class="hidden mb-6"></div>
+
+                <!-- Action Buttons -->
+                <div id="modalButtons" class="flex items-center justify-center gap-3">
+                    <button type="button" id="modalCancelBtn" class="flex-1 py-2.5 px-4 bg-navy-800 hover:bg-navy-700 border border-slate-700 text-slate-300 font-bold text-xs sm:text-sm rounded-xl transition-all cursor-pointer">
+                        إلغاء
+                    </button>
+                    <button type="button" id="modalConfirmBtn" class="flex-1 py-2.5 px-4 bg-gradient-to-r from-gold-500 to-amber-500 hover:from-gold-400 hover:to-amber-400 text-navy-950 font-black text-xs sm:text-sm rounded-xl transition-all shadow-lg cursor-pointer">
+                        تأكيد
+                    </button>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -356,7 +393,11 @@
             return num.toLocaleString('en-US');
         }
 
-        // إشعار عائم Toast
+        // متغيرات النافذة المنبثقة المخصصة
+        let activeModalResolver = null;
+        let toastTimeout = null;
+
+        // إشعار عائم فاخر Toast
         function showToast(msg, isSuccess = true) {
             const toast = document.getElementById('toast');
             const content = document.getElementById('toastContent');
@@ -365,17 +406,155 @@
 
             text.innerText = msg;
             if (isSuccess) {
-                content.className = 'flex items-center gap-3 px-5 py-3 rounded-xl shadow-2xl text-sm font-bold bg-emerald-950 border border-emerald-700 text-emerald-200';
-                icon.className = 'fa-solid fa-circle-check text-emerald-400 text-lg';
+                content.className = 'flex items-center gap-3 px-5 py-3 rounded-2xl shadow-2xl text-xs sm:text-sm font-bold bg-emerald-950/90 border border-emerald-500/40 text-emerald-200 backdrop-blur-md shadow-emerald-950/50';
+                icon.className = 'fa-solid fa-circle-check text-emerald-400 text-base sm:text-lg';
             } else {
-                content.className = 'flex items-center gap-3 px-5 py-3 rounded-xl shadow-2xl text-sm font-bold bg-rose-950 border border-rose-700 text-rose-200';
-                icon.className = 'fa-solid fa-triangle-exclamation text-rose-400 text-lg';
+                content.className = 'flex items-center gap-3 px-5 py-3 rounded-2xl shadow-2xl text-xs sm:text-sm font-bold bg-rose-950/90 border border-rose-500/40 text-rose-200 backdrop-blur-md shadow-rose-950/50';
+                icon.className = 'fa-solid fa-triangle-exclamation text-rose-400 text-base sm:text-lg';
             }
 
             toast.classList.remove('hidden');
-            setTimeout(() => {
+            if (toastTimeout) clearTimeout(toastTimeout);
+            toastTimeout = setTimeout(() => {
                 toast.classList.add('hidden');
-            }, 3500);
+            }, 3800);
+        }
+
+        // نافذة تأكيد مخصصة فائقة الأناقة (بديلة عن confirm المتصفح الافتراضية)
+        function showConfirmDialog({
+            title = 'تأكيد الإجراء',
+            message = 'هل أنت متأكد من رغبتك في المتابعة؟',
+            icon = 'fa-triangle-exclamation',
+            type = 'danger', // 'danger' | 'warning' | 'success' | 'info'
+            confirmText = 'تأكيد',
+            cancelText = 'إلغاء',
+        }) {
+            return new Promise((resolve) => {
+                activeModalResolver = resolve;
+                const modal = document.getElementById('customModal');
+                const card = document.getElementById('customModalCard');
+                const titleEl = document.getElementById('modalTitle');
+                const bodyEl = document.getElementById('modalBody');
+                const iconEl = document.getElementById('modalIcon');
+                const iconWrap = document.getElementById('modalIconWrap');
+                const extraEl = document.getElementById('modalExtra');
+                const cancelBtn = document.getElementById('modalCancelBtn');
+                const confirmBtn = document.getElementById('modalConfirmBtn');
+                const glow = document.getElementById('modalGlow');
+
+                titleEl.innerText = title;
+                bodyEl.innerHTML = `<p>${message}</p>`;
+                extraEl.classList.add('hidden');
+                extraEl.innerHTML = '';
+
+                cancelBtn.classList.remove('hidden');
+                cancelBtn.innerText = cancelText;
+                confirmBtn.innerText = confirmText;
+
+                iconEl.className = `fa-solid ${icon}`;
+
+                if (type === 'danger') {
+                    iconWrap.className = 'w-16 h-16 mx-auto mb-4 rounded-2xl flex items-center justify-center text-2xl border bg-rose-500/10 border-rose-500/30 text-rose-400 shadow-rose-900/40';
+                    confirmBtn.className = 'flex-1 py-2.5 px-4 bg-gradient-to-r from-rose-600 to-rose-700 hover:from-rose-500 hover:to-rose-600 text-white font-black text-xs sm:text-sm rounded-xl transition-all shadow-lg shadow-rose-900/40 cursor-pointer';
+                    glow.className = 'absolute -top-16 -right-16 w-40 h-40 bg-rose-500/15 rounded-full blur-3xl pointer-events-none';
+                } else if (type === 'success') {
+                    iconWrap.className = 'w-16 h-16 mx-auto mb-4 rounded-2xl flex items-center justify-center text-2xl border bg-emerald-500/10 border-emerald-500/30 text-emerald-400 shadow-emerald-900/40';
+                    confirmBtn.className = 'flex-1 py-2.5 px-4 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-black text-xs sm:text-sm rounded-xl transition-all shadow-lg shadow-emerald-900/40 cursor-pointer';
+                    glow.className = 'absolute -top-16 -right-16 w-40 h-40 bg-emerald-500/15 rounded-full blur-3xl pointer-events-none';
+                } else if (type === 'warning') {
+                    iconWrap.className = 'w-16 h-16 mx-auto mb-4 rounded-2xl flex items-center justify-center text-2xl border bg-amber-500/10 border-amber-500/30 text-amber-400 shadow-amber-900/40';
+                    confirmBtn.className = 'flex-1 py-2.5 px-4 bg-gradient-to-r from-amber-600 to-amber-700 hover:from-amber-500 hover:to-amber-600 text-white font-black text-xs sm:text-sm rounded-xl transition-all shadow-lg shadow-amber-900/40 cursor-pointer';
+                    glow.className = 'absolute -top-16 -right-16 w-40 h-40 bg-amber-500/15 rounded-full blur-3xl pointer-events-none';
+                } else {
+                    iconWrap.className = 'w-16 h-16 mx-auto mb-4 rounded-2xl flex items-center justify-center text-2xl border bg-gold-500/10 border-gold-500/30 text-gold-400 shadow-gold-900/40';
+                    confirmBtn.className = 'flex-1 py-2.5 px-4 bg-gradient-to-r from-gold-500 to-amber-500 hover:from-gold-400 hover:to-amber-400 text-navy-950 font-black text-xs sm:text-sm rounded-xl transition-all shadow-lg shadow-gold-900/40 cursor-pointer';
+                    glow.className = 'absolute -top-16 -right-16 w-40 h-40 bg-gold-500/15 rounded-full blur-3xl pointer-events-none';
+                }
+
+                modal.classList.remove('hidden');
+                requestAnimationFrame(() => {
+                    card.classList.remove('scale-95');
+                    card.classList.add('scale-100');
+                });
+
+                cancelBtn.onclick = () => {
+                    closeCustomModal();
+                    if (activeModalResolver) activeModalResolver(false);
+                };
+
+                confirmBtn.onclick = () => {
+                    closeCustomModal();
+                    if (activeModalResolver) activeModalResolver(true);
+                };
+            });
+        }
+
+        // نافذة نجاح تفعيل الاشتراك مع إبراز المفتاح وإمكانية نسخه
+        function showActivationSuccessModal(deviceCode, planDays, licenseKey) {
+            const modal = document.getElementById('customModal');
+            const card = document.getElementById('customModalCard');
+            const titleEl = document.getElementById('modalTitle');
+            const bodyEl = document.getElementById('modalBody');
+            const iconEl = document.getElementById('modalIcon');
+            const iconWrap = document.getElementById('modalIconWrap');
+            const extraEl = document.getElementById('modalExtra');
+            const cancelBtn = document.getElementById('modalCancelBtn');
+            const confirmBtn = document.getElementById('modalConfirmBtn');
+            const glow = document.getElementById('modalGlow');
+
+            titleEl.innerText = 'تم تفعيل الاشتراك بنجاح 🎉';
+            bodyEl.innerHTML = `
+                <p class="text-slate-200 font-bold mb-1">تم إنشاء وتفعيل الترخيص التجاري للجهاز:</p>
+                <div class="inline-block bg-navy-950 px-3 py-1 rounded-lg border border-slate-700 text-gold-400 font-mono text-xs font-black">${deviceCode}</div>
+                <p class="text-slate-400 text-xs mt-2">المدة الممنوحة: <span class="text-emerald-400 font-bold">${planDays} يوماً</span></p>
+            `;
+
+            extraEl.innerHTML = `
+                <div class="bg-navy-950 p-4 rounded-2xl border border-gold-500/40 text-right space-y-2">
+                    <div class="flex items-center justify-between text-xs text-slate-400">
+                        <span>مفتاح الترخيص المشفر (License Key):</span>
+                        <span class="text-[10px] text-emerald-400 font-bold bg-emerald-950/80 px-2 py-0.5 rounded border border-emerald-800">جاهز ومفعل</span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <input type="text" readonly value="${licenseKey}" dir="ltr" class="w-full bg-navy-900 border border-slate-700 rounded-xl px-3 py-2 text-xs font-mono font-bold text-gold-400 select-all outline-none" id="activatedLicenseInput">
+                        <button type="button" onclick="copyText('${licenseKey}')" class="px-3.5 py-2 bg-gold-500 hover:bg-gold-400 text-navy-950 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center gap-1.5 shrink-0 shadow-md">
+                            <i class="fa-regular fa-copy"></i>
+                            <span>نسخ</span>
+                        </button>
+                    </div>
+                    <p class="text-[11px] text-slate-400 leading-normal pt-1">
+                        💡 يمكنك إرسال هذا المفتاح للعميل أو سيتلقاه التطبيق تلقائياً عبر السحابة عند اتصاله بالإنترنت.
+                    </p>
+                </div>
+            `;
+            extraEl.classList.remove('hidden');
+
+            cancelBtn.classList.add('hidden');
+            confirmBtn.innerText = 'إغلاق ومتابعة';
+            confirmBtn.className = 'w-full py-2.5 px-6 bg-gradient-to-r from-gold-500 to-amber-500 hover:from-gold-400 hover:to-amber-400 text-navy-950 font-black text-xs sm:text-sm rounded-xl transition-all shadow-lg shadow-gold-900/30 cursor-pointer';
+
+            iconEl.className = 'fa-solid fa-award';
+            iconWrap.className = 'w-16 h-16 mx-auto mb-4 rounded-2xl flex items-center justify-center text-2xl border bg-gold-500/10 border-gold-500/30 text-gold-400 shadow-gold-900/40';
+            glow.className = 'absolute -top-16 -right-16 w-40 h-40 bg-gold-500/20 rounded-full blur-3xl pointer-events-none';
+
+            modal.classList.remove('hidden');
+            requestAnimationFrame(() => {
+                card.classList.remove('scale-95');
+                card.classList.add('scale-100');
+            });
+
+            confirmBtn.onclick = () => closeCustomModal();
+        }
+
+        // إغلاق النافذة المنبثقة بسلاسة
+        function closeCustomModal() {
+            const modal = document.getElementById('customModal');
+            const card = document.getElementById('customModalCard');
+            card.classList.remove('scale-100');
+            card.classList.add('scale-95');
+            setTimeout(() => {
+                modal.classList.add('hidden');
+            }, 180);
         }
 
         // معالجة تسجيل الدخول للإدارة
@@ -711,6 +890,16 @@
             const daysInput = document.getElementById(`days_input_${subId}`);
             const days = daysInput ? parseInt(daysInput.value) || sub.plan_days || 30 : sub.plan_days || 30;
 
+            const confirmed = await showConfirmDialog({
+                title: 'تأكيد تفعيل الاشتراك',
+                message: `هل تريد تفعيل اشتراك الجهاز <strong>(${sub.device_code})</strong> لمدة <strong>(${days} يوماً)</strong> الآن؟`,
+                icon: 'fa-bolt-lightning',
+                type: 'success',
+                confirmText: 'تأكيد التفعيل الفوري',
+                cancelText: 'إلغاء',
+            });
+            if (!confirmed) return;
+
             const now = new Date();
             const expiryDate = new Date(now.getTime() + days * 24 * 60 * 60 * 1000);
             const expiryToken = formatDateToToken(expiryDate);
@@ -730,8 +919,9 @@
                     .eq('id', subId);
 
                 if (error) throw error;
-                showToast(`تم تفعيل اشتراك الجهاز (${sub.device_code}) بنجاح لمدة ${days} يوم!`);
+                showToast(`تم تفعيل اشتراك الجهاز (${sub.device_code}) بنجاح!`, true);
                 fetchSubscriptions();
+                showActivationSuccessModal(sub.device_code, days, licenseKey);
             } catch (err) {
                 showToast('فشل تفعيل الاشتراك: ' + err.message, false);
             }
@@ -782,6 +972,16 @@
                 return;
             }
 
+            const confirmed = await showConfirmDialog({
+                title: 'تعديل مدة الاشتراك',
+                message: `هل أنت متأكد من تعيين مدة الاشتراك للجهاز <strong>(${sub.device_code})</strong> إلى <strong>(${days} يوماً)</strong>؟`,
+                icon: 'fa-calendar-check',
+                type: 'info',
+                confirmText: 'حفظ وتطبيق المدة',
+                cancelText: 'إلغاء',
+            });
+            if (!confirmed) return;
+
             const now = new Date();
             const newExpiry = new Date(now.getTime() + days * 24 * 60 * 60 * 1000);
             const expiryToken = formatDateToToken(newExpiry);
@@ -809,7 +1009,23 @@
 
         // 4. Toggle Pause / Resume
         async function togglePause(subId, currentStatus) {
+            const sub = subscriptions.find(s => s.id === subId);
+            const devCode = sub ? sub.device_code : '';
             const nextStatus = currentStatus === 'paused' ? 'active' : 'paused';
+            const isPausing = nextStatus === 'paused';
+
+            const confirmed = await showConfirmDialog({
+                title: isPausing ? 'إيقاف الاشتراك مؤقتاً' : 'استئناف الاشتراك',
+                message: isPausing
+                    ? `هل تريد تجميد وتعليق اشتراك الجهاز <strong>(${devCode})</strong> مؤقتاً؟`
+                    : `هل تريد إعادة تفعيل واستئناف اشتراك الجهاز <strong>(${devCode})</strong>؟`,
+                icon: isPausing ? 'fa-circle-pause' : 'fa-circle-play',
+                type: isPausing ? 'warning' : 'success',
+                confirmText: isPausing ? 'نعم، أوقف الاشتراك' : 'نعم، استأنف الاشتراك',
+                cancelText: 'تراجع',
+            });
+            if (!confirmed) return;
+
             try {
                 const { error } = await sbClient
                     .from('app_subscriptions')
@@ -826,7 +1042,19 @@
 
         // 5. Delete Subscription
         async function deleteSubscription(subId) {
-            if (!confirm('هل أنت متأكد من رغبتك في حذف هذا الاشتراك نهائياً؟')) return;
+            const sub = subscriptions.find(s => s.id === subId);
+            const devCode = sub ? sub.device_code : '';
+
+            const confirmed = await showConfirmDialog({
+                title: 'تأكيد حذف الاشتراك نهائياً',
+                message: `هل أنت متأكد من رغبتك في حذف اشتراك الجهاز <strong>(${devCode})</strong> نهائياً؟<br><span class="text-rose-400 font-bold">تحذير: لا يمكن التراجع عن هذا الإجراء وسيتم إلغاء ترخيص الجهاز.</span>`,
+                icon: 'fa-trash-can',
+                type: 'danger',
+                confirmText: 'نعم، احذف الاشتراك نهائياً',
+                cancelText: 'تراجع',
+            });
+            if (!confirmed) return;
+
             try {
                 const { error } = await sbClient
                     .from('app_subscriptions')
