@@ -133,6 +133,22 @@ class _DeliveredOrdersScreenState extends State<DeliveredOrdersScreen> {
       // فلتر تاريخ التسليم
       if (_dateFilterType == 'today') {
         if (deliveryDateStr != todayStr) return false;
+      } else if (_dateFilterType == 'week') {
+        final now = DateTime.now();
+        final int daysSinceSaturday = (now.weekday + 1) % 7;
+        final saturday = DateTime(now.year, now.month, now.day).subtract(Duration(days: daysSinceSaturday));
+        final thursday = saturday.add(const Duration(days: 5));
+        final satStr = intl.DateFormat('yyyy-MM-dd').format(saturday);
+        final thuStr = intl.DateFormat('yyyy-MM-dd').format(thursday);
+
+        final dDate = DateTime.tryParse(deliveryDateStr);
+        if (dDate != null) {
+          final dOnly = DateTime(dDate.year, dDate.month, dDate.day);
+          if (dOnly.isBefore(saturday) || dOnly.isAfter(thursday)) return false;
+        } else {
+          final dStr = deliveryDateStr.length >= 10 ? deliveryDateStr.substring(0, 10) : deliveryDateStr;
+          if (dStr.compareTo(satStr) < 0 || dStr.compareTo(thuStr) > 0) return false;
+        }
       } else if (_dateFilterType == 'range') {
         if (_startDate != null || _endDate != null) {
           DateTime? dDate = DateTime.tryParse(deliveryDateStr);
@@ -359,6 +375,19 @@ class _DeliveredOrdersScreenState extends State<DeliveredOrdersScreen> {
                         onTap: () {
                           setState(() {
                             _dateFilterType = 'today';
+                            _startDate = null;
+                            _endDate = null;
+                          });
+                        },
+                      ),
+                      const SizedBox(width: 6),
+                      _DateFilterChip(
+                        label: 'تسليم الأسبوع',
+                        icon: Icons.date_range_rounded,
+                        isSelected: _dateFilterType == 'week',
+                        onTap: () {
+                          setState(() {
+                            _dateFilterType = 'week';
                             _startDate = null;
                             _endDate = null;
                           });

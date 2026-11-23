@@ -29,7 +29,7 @@ class DeliveredStatementScreen extends StatefulWidget {
       _DeliveredStatementScreenState();
 }
 
-enum _DeliveredDatePreset { today, last7Days, thisMonth, lastMonth, all, custom }
+enum _DeliveredDatePreset { today, thisWeek, last7Days, thisMonth, lastMonth, all, custom }
 
 class _DeliveredStatementScreenState extends State<DeliveredStatementScreen> {
   final GlobalKey _captureKey = GlobalKey();
@@ -103,6 +103,13 @@ class _DeliveredStatementScreenState extends State<DeliveredStatementScreen> {
         case _DeliveredDatePreset.today:
           _fromDate = today;
           _toDate = today;
+          break;
+        case _DeliveredDatePreset.thisWeek:
+          final int daysSinceSaturday = (today.weekday + 1) % 7;
+          final saturday = today.subtract(Duration(days: daysSinceSaturday));
+          final thursday = saturday.add(const Duration(days: 5));
+          _fromDate = saturday;
+          _toDate = thursday;
           break;
         case _DeliveredDatePreset.last7Days:
           _fromDate = today.subtract(const Duration(days: 6));
@@ -384,6 +391,8 @@ class _DeliveredStatementScreenState extends State<DeliveredStatementScreen> {
             child: Row(
               children: [
                 _buildPresetChip('اليوم', _DeliveredDatePreset.today),
+                const SizedBox(width: 6),
+                _buildPresetChip('تسليم الأسبوع', _DeliveredDatePreset.thisWeek),
                 const SizedBox(width: 6),
                 _buildPresetChip('آخر 7 أيام', _DeliveredDatePreset.last7Days),
                 const SizedBox(width: 6),
@@ -724,6 +733,24 @@ class _DeliveredReceiptCard extends StatelessWidget {
                               ],
                             ),
                           ),
+                          if (report.totalTableSets > 0) ...[
+                            Container(width: 1, height: 32, color: const Color(0xFFBBF7D0)),
+                            Expanded(
+                              child: Column(
+                                children: [
+                                  Text(
+                                    '${report.totalTableSets}',
+                                    style: const TextStyle(
+                                      fontSize: 22,
+                                      fontWeight: FontWeight.w900,
+                                      color: Color(0xFF0F766E),
+                                    ),
+                                  ),
+                                  const Text('طقم ترابيزات', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.black54)),
+                                ],
+                              ),
+                            ),
+                          ],
                           Container(width: 1, height: 32, color: const Color(0xFFBBF7D0)),
                           Expanded(
                             child: Column(
@@ -767,7 +794,9 @@ class _DeliveredReceiptCard extends StatelessWidget {
                           borderRadius: BorderRadius.circular(8),
                         ),
                         child: Text(
-                          'إجمالي القطع المسلّمة: ${report.totalPieces} قطعة • الإجمالي: $summaryBadge',
+                          report.totalTableSets > 0
+                              ? 'إجمالي القطع المسلّمة: ${report.totalPieces} قطعة • $summaryBadge • ${report.totalTableSets} طقم ترابيزات'
+                              : 'إجمالي القطع المسلّمة: ${report.totalPieces} قطعة • الإجمالي: $summaryBadge',
                           textAlign: TextAlign.center,
                           style: const TextStyle(
                             fontSize: 11,
@@ -816,7 +845,11 @@ class _DeliveredReceiptCard extends StatelessWidget {
                                 borderRadius: BorderRadius.circular(10),
                               ),
                               child: Text(
-                                report.isEmpty ? '0' : summaryBadge,
+                                report.isEmpty
+                                    ? '0'
+                                    : (report.totalTableSets > 0
+                                        ? '$summaryBadge + ${report.totalTableSets} ترابيزات'
+                                        : summaryBadge),
                                 style: const TextStyle(
                                   color: Colors.white,
                                   fontSize: 11,
@@ -845,7 +878,7 @@ class _DeliveredReceiptCard extends StatelessWidget {
                               final cat = entry.value;
                               final compactText = UpholstererStatementHelper.formatCompactLine(
                                 categoryName: cat.categoryName,
-                                sets: cat.sets,
+                                sets: cat.sets > 0 ? cat.sets : cat.tableSets,
                                 excessPieces: cat.excessPieceTotals,
                               );
                               return Container(

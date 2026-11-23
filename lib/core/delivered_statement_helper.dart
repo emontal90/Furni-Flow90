@@ -8,6 +8,8 @@ import 'upholsterer_statement_helper.dart';
 class DeliveredCategorySummary {
   final String categoryName;
   final int sets;
+  final int tableSets;
+  final bool isTableOnly;
   final int individualPieces;
   final int totalPieces;
   final int ordersCount;
@@ -17,6 +19,8 @@ class DeliveredCategorySummary {
   const DeliveredCategorySummary({
     required this.categoryName,
     required this.sets,
+    this.tableSets = 0,
+    this.isTableOnly = false,
     required this.individualPieces,
     required this.totalPieces,
     required this.ordersCount,
@@ -32,6 +36,8 @@ class DeliveredOrderStatementItem {
   final String categoryName;
   final String orderType;
   final int sets;
+  final int tableSets;
+  final bool isTableOnly;
   final int individualPieces;
   final int totalPieces;
   final List<Map<String, dynamic>> pieces;
@@ -42,6 +48,8 @@ class DeliveredOrderStatementItem {
     required this.categoryName,
     required this.orderType,
     required this.sets,
+    this.tableSets = 0,
+    this.isTableOnly = false,
     required this.individualPieces,
     required this.totalPieces,
     required this.pieces,
@@ -55,6 +63,7 @@ class DeliveredStatementReport {
   final String? categoryFilter;
   final String? customerFilter;
   final int totalSets;
+  final int totalTableSets;
   final int totalIndividualPieces;
   final int totalPieces;
   final int ordersCount;
@@ -68,6 +77,7 @@ class DeliveredStatementReport {
     required this.categoryFilter,
     required this.customerFilter,
     required this.totalSets,
+    this.totalTableSets = 0,
     required this.totalIndividualPieces,
     required this.totalPieces,
     required this.ordersCount,
@@ -171,10 +181,14 @@ class DeliveredStatementHelper {
         fallbackSetsCount: setsFallback,
       );
 
-      final catKey = catName.isNotEmpty ? catName : 'صنف #$catId';
+      final bool isTableOnly = OrderDeliveryHelper.isTableSetOnlyOrder(pieces);
+      final catKey = isTableOnly
+          ? 'طقم ترابيزات : "${catName.isNotEmpty ? catName : 'صنف #$catId'}"'
+          : (catName.isNotEmpty ? catName : 'صنف #$catId');
       ordersByCat.putIfAbsent(catKey, () => []).add({
         'category_id': catId,
         'pieces': pieces,
+        'is_table_only': isTableOnly,
       });
 
       items.add(DeliveredOrderStatementItem(
@@ -182,7 +196,9 @@ class DeliveredStatementHelper {
         customerName: custName,
         categoryName: catKey,
         orderType: orderType,
-        sets: summary.sets,
+        sets: isTableOnly ? 0 : summary.sets,
+        tableSets: isTableOnly ? summary.sets : 0,
+        isTableOnly: isTableOnly,
         individualPieces: summary.individualPieces,
         totalPieces: summary.totalPieces,
         pieces: pieces,
@@ -190,6 +206,7 @@ class DeliveredStatementHelper {
     }
 
     int totalSets = 0;
+    int totalTableSets = 0;
     int totalIndividual = 0;
     int totalPieces = 0;
     final List<DeliveredCategorySummary> catSummaries = [];
@@ -197,6 +214,7 @@ class DeliveredStatementHelper {
     final sortedCats = ordersByCat.keys.toList()..sort();
     for (final catName in sortedCats) {
       final list = ordersByCat[catName]!;
+      final bool isCatTableOnly = catName.startsWith('طقم ترابيزات :');
       final int refCatId = CategoryStockHelper.parseInt(list.first['category_id']);
       final List<dynamic> rawCatComps = (refCatId > 0 && compsById.containsKey(refCatId))
           ? compsById[refCatId]!
@@ -205,6 +223,7 @@ class DeliveredStatementHelper {
       final Map<String, int> pieceTotals = {};
       final Map<String, int> baseByName = {};
       final Set<String> customNames = {};
+      final Set<String> tableNames = {};
 
       for (final entry in list) {
         final pieces = entry['pieces'] as List<Map<String, dynamic>>;
@@ -213,6 +232,9 @@ class DeliveredStatementHelper {
           final qty = math.max(0, CategoryStockHelper.parseInt(p['qty']));
           if (pName.isEmpty || qty <= 0) continue;
           pieceTotals[pName] = (pieceTotals[pName] ?? 0) + qty;
+          if (p['is_table'] == true || p['is_table'] == 1) {
+            tableNames.add(pName);
+          }
           if (p['is_custom'] == true) {
             customNames.add(pName);
             baseByName[pName] = 0;
@@ -228,6 +250,7 @@ class DeliveredStatementHelper {
                 'name': e.key,
                 'qty': e.value,
                 'base_qty': baseByName[e.key] ?? 1,
+                if (tableNames.contains(e.key) || isCatTableOnly) 'is_table': true,
                 if (customNames.contains(e.key)) 'is_custom': true,
               })
           .toList();
@@ -240,6 +263,7 @@ class DeliveredStatementHelper {
       final Map<String, int> baseLookup = {};
       for (final item in rawCatComps) {
         if (item is! Map) continue;
+        if (isCatTableOnly && item['is_table'] != true && item['is_table'] != 1) continue;
         final n = (item['name'] ?? '').toString().trim();
         final b = math.max(1, CategoryStockHelper.parseInt(item['base_qty'], fallback: 1));
         if (n.isNotEmpty) baseLookup[n] = b;
@@ -258,13 +282,19 @@ class DeliveredStatementHelper {
         }
       }
 
-      totalSets += catSummary.sets;
+      if (isCatTableOnly) {
+        totalTableSets += catSummary.sets;
+      } else {
+        totalSets += catSummary.sets;
+      }
       totalIndividual += catSummary.individualPieces;
       totalPieces += catSummary.totalPieces;
 
       catSummaries.add(DeliveredCategorySummary(
         categoryName: catName,
-        sets: catSummary.sets,
+        sets: isCatTableOnly ? 0 : catSummary.sets,
+        tableSets: isCatTableOnly ? catSummary.sets : 0,
+        isTableOnly: isCatTableOnly,
         individualPieces: catSummary.individualPieces,
         totalPieces: catSummary.totalPieces,
         ordersCount: list.length,
@@ -279,6 +309,7 @@ class DeliveredStatementHelper {
       categoryFilter: cleanCatFilter,
       customerFilter: cleanCustFilter,
       totalSets: totalSets,
+      totalTableSets: totalTableSets,
       totalIndividualPieces: totalIndividual,
       totalPieces: totalPieces,
       ordersCount: items.length,

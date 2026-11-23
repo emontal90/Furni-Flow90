@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:furniture_erp/components/order_card.dart';
 import 'package:furniture_erp/core/app_theme.dart';
+import 'package:furniture_erp/core/delivered_statement_helper.dart';
 import 'package:furniture_erp/core/order_delivery_helper.dart';
 import 'package:furniture_erp/screens/dashboard_screen.dart';
 
@@ -662,6 +663,108 @@ void main() {
     expect(find.text('من طقم: كنز'), findsOneWidget);
     expect(find.text('قطعة فردية تُخصم من مخزون (كنز) عند التسليم'), findsOneWidget);
     expect(find.text('1'), findsOneWidget);
+  });
+
+  testWidgets('OrderCard for table-set-only displays طقم ترابيزات label and style', (tester) async {
+    final tableOnlyOrder = {
+      'id': 15,
+      'customer_name': 'سعيد حسن',
+      'category_name': 'صالون ملكي',
+      'order_type': 'نمطي',
+      'sets_count': 1,
+      'delivery_date': '2026-11-20',
+      'selected_components_json': jsonEncode([
+        {'name': 'ترابيزة كبيرة', 'qty': 1, 'is_table': true},
+        {'name': 'ترابيزة صغيرة', 'qty': 2, 'is_table': true},
+      ]),
+    };
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Directionality(
+          textDirection: TextDirection.rtl,
+          child: Scaffold(
+            body: OrderCard(
+              order: tableOnlyOrder,
+              isDelivered: false,
+            ),
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('طقم ترابيزات : "صالون ملكي"'), findsOneWidget);
+    expect(find.byIcon(Icons.table_restaurant_rounded), findsWidgets);
+  });
+
+  test('DeliveredStatementHelper separates table sets from regular sets', () {
+    final categories = [
+      {
+        'id': 1,
+        'name': 'صالون ملكي',
+        'components_json': jsonEncode([
+          {'name': 'كنبة كبيرة', 'base_qty': 1},
+          {'name': 'فوتيه', 'base_qty': 2},
+          {'name': 'ترابيزة كبيرة', 'base_qty': 1, 'is_table': true},
+          {'name': 'ترابيزة صغيرة', 'base_qty': 2, 'is_table': true},
+        ]),
+      },
+    ];
+
+    final deliveredOrders = [
+      // 1. طلب عادي كامل
+      {
+        'id': 101,
+        'category_id': 1,
+        'category_name': 'صالون ملكي',
+        'customer_name': 'محمد',
+        'order_type': 'نمطي',
+        'delivery_date': '2026-11-20',
+        'selected_components_json': jsonEncode([
+          {'name': 'كنبة كبيرة', 'qty': 1, 'base_qty': 1},
+          {'name': 'فوتيه', 'qty': 2, 'base_qty': 2},
+        ]),
+      },
+      // 2. طلب طقم عادي مع تضمين ترابيزات (يحسب كطقم عادي كامل)
+      {
+        'id': 102,
+        'category_id': 1,
+        'category_name': 'صالون ملكي',
+        'customer_name': 'محمود',
+        'order_type': 'نمطي',
+        'delivery_date': '2026-11-21',
+        'selected_components_json': jsonEncode([
+          {'name': 'كنبة كبيرة', 'qty': 1, 'base_qty': 1},
+          {'name': 'فوتيه', 'qty': 2, 'base_qty': 2},
+          {'name': 'ترابيزة كبيرة', 'qty': 1, 'base_qty': 1, 'is_table': true},
+          {'name': 'ترابيزة صغيرة', 'qty': 2, 'base_qty': 2, 'is_table': true},
+        ]),
+      },
+      // 3. طلب طقم ترابيزات فقط بدون الطقم الأساسي (يحسب كطقم ترابيزات)
+      {
+        'id': 103,
+        'category_id': 1,
+        'category_name': 'صالون ملكي',
+        'customer_name': 'إبراهيم',
+        'order_type': 'نمطي',
+        'delivery_date': '2026-11-22',
+        'selected_components_json': jsonEncode([
+          {'name': 'ترابيزة كبيرة', 'qty': 1, 'base_qty': 1, 'is_table': true},
+          {'name': 'ترابيزة صغيرة', 'qty': 2, 'base_qty': 2, 'is_table': true},
+        ]),
+      },
+    ];
+
+    final report = DeliveredStatementHelper.buildStatement(
+      deliveredOrders: deliveredOrders,
+      categories: categories,
+    );
+
+    // الطلبان 101 و 102 يحسبان كـ 2 طقم عادي
+    expect(report.totalSets, 2);
+    // الطلب 103 يحسب كطقم ترابيزات مدرج بدون الطقم الأساسي
+    expect(report.totalTableSets, 1);
+    expect(report.ordersCount, 3);
   });
 }
 

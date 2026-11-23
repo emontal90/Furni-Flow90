@@ -40,16 +40,23 @@ class OrderCard extends StatelessWidget {
         ? StockMovementHelper.formatDateString12(createdAtRaw)
         : '';
 
+    final bool isTablesOnly = OrderDeliveryHelper.isTableSetOnlyOrder(comps);
+    final String categoryDisplayName = isTablesOnly
+        ? 'طقم ترابيزات : "${order['category_name']}"'
+        : 'طقم: ${order['category_name']}';
+
     final int? setsCount = (order['sets_count'] as int?);
     final summary = OrderDeliveryHelper.summarizeOrder(
       orderComps: comps,
       rawCategoryComps: categoryComponents ?? const [],
       fallbackSetsCount: setsCount ?? 0,
     );
-    final String? statusBadgeText = summary.toStatusBadgeLabel();
-    final Color statusBadgeColor = summary.status == OrderCompletenessStatus.complete
-        ? const Color(0xFFEF6C00) // برتقالي للـ كامل
-        : const Color(0xFFA16207); // أصفر غامق للـ زائد والناقص
+    final String? statusBadgeText = summary.toStatusBadgeLabel(isTableOnly: isTablesOnly);
+    final Color statusBadgeColor = isTablesOnly
+        ? const Color(0xFF0D9488)
+        : (summary.status == OrderCompletenessStatus.complete
+            ? const Color(0xFFEF6C00) // برتقالي للـ كامل
+            : const Color(0xFFA16207)); // أصفر غامق للـ زائد والناقص
 
     final String orderTypeStr = (order['order_type'] ?? '').toString().trim();
     final bool isCustomOrderType =
@@ -118,11 +125,11 @@ class OrderCard extends StatelessWidget {
                         runSpacing: 4,
                         children: [
                           Text(
-                            'طقم: ${order['category_name']}',
+                            categoryDisplayName,
                             style: TextStyle(
                               fontWeight: FontWeight.bold,
                               fontSize: 12.5,
-                              color: AppTheme.textBody(context),
+                              color: isTablesOnly ? const Color(0xFF0F766E) : AppTheme.textBody(context),
                             ),
                           ),
                           Container(
@@ -256,13 +263,17 @@ class OrderCard extends StatelessWidget {
                   spacing: 8,
                   runSpacing: 6,
                   children: [
-                    const Icon(Icons.weekend_rounded, size: 18, color: AppTheme.primaryNavy),
+                    Icon(
+                      isTablesOnly ? Icons.table_restaurant_rounded : Icons.weekend_rounded,
+                      size: 18,
+                      color: isTablesOnly ? const Color(0xFF0D9488) : AppTheme.primaryNavy,
+                    ),
                     Text(
-                      'طقم: ${order['category_name']}',
-                      style: const TextStyle(
+                      categoryDisplayName,
+                      style: TextStyle(
                           fontWeight: FontWeight.bold,
                           fontSize: 14,
-                          color: AppTheme.primaryNavy),
+                          color: isTablesOnly ? const Color(0xFF0F766E) : AppTheme.primaryNavy),
                     ),
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
@@ -377,7 +388,9 @@ class OrderCard extends StatelessWidget {
               )
             else
               Text(
-                'طقم ${order['category_name']} كامل بجميع قطعه',
+                isTablesOnly
+                    ? 'طقم ترابيزات ${order['category_name']} كامل بجميع قطعه'
+                    : 'طقم ${order['category_name']} كامل بجميع قطعه',
                 style: const TextStyle(fontSize: 13, color: Colors.black87),
               ),
 

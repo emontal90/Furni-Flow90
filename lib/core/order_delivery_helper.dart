@@ -52,7 +52,13 @@ class OrderSetSummary {
     return null;
   }
 
-  String? toStatusBadgeLabel() {
+  String? toStatusBadgeLabel({bool isTableOnly = false}) {
+    if (isTableOnly) {
+      if (sets > 0 && individualPieces == 0) return '$sets طقم ترابيزة (كامل)';
+      if (sets > 0 && individualPieces > 0) return '$sets طقم ترابيزة + $individualPieces فردي (زائد)';
+      if (individualPieces > 0) return '$individualPieces قطعة ترابيزة (ناقص)';
+      return null;
+    }
     switch (status) {
       case OrderCompletenessStatus.complete:
         return '$sets طقم (كامل)';
@@ -112,6 +118,53 @@ class OrderDeliveryHelper {
       map[name] = base > 0 ? base : 1;
     }
     return map;
+  }
+
+  static Map<String, int> _tableBaseQtyLookup(List<dynamic> rawCategoryComps) {
+    final map = <String, int>{};
+    for (final item in rawCategoryComps) {
+      if (item is! Map) continue;
+      if (item['is_table'] != true && item['is_table'] != 1) continue;
+      final name = (item['name'] ?? '').toString().trim();
+      if (name.isEmpty) continue;
+      final base = _parseInt(item['base_qty'], fallback: 1);
+      map[name] = base > 0 ? base : 1;
+    }
+    return map;
+  }
+
+  /// التحقق مما إذا كان الطلب يتضمن طقم ترابيزات فقط بدون قطع الطقم الأساسي
+  static bool isTableSetOnlyOrder(dynamic rawComps) {
+    List comps = const [];
+    if (rawComps is List) {
+      comps = rawComps;
+    } else if (rawComps is String && rawComps.trim().isNotEmpty) {
+      try {
+        final decoded = jsonDecode(rawComps);
+        if (decoded is List) comps = decoded;
+      } catch (_) {}
+    }
+    if (comps.isEmpty) return false;
+
+    bool hasTablePieces = false;
+    bool hasMainSetPieces = false;
+
+    for (final c in comps) {
+      if (c is! Map) continue;
+      final qty = _parseInt(c['qty']);
+      if (qty <= 0) continue;
+
+      final isTable = c['is_table'] == true || c['is_table'] == 1;
+      final isFromOtherCat = c['source_category_id'] != null;
+
+      if (isTable) {
+        hasTablePieces = true;
+      } else if (!isFromOtherCat) {
+        hasMainSetPieces = true;
+      }
+    }
+
+    return hasTablePieces && !hasMainSetPieces;
   }
 
   /// استخراج قائمة القطع القابلة للتسليم مع الحفاظ على `base_qty` لكل قطعة
@@ -183,7 +236,10 @@ class OrderDeliveryHelper {
     List<dynamic> rawCategoryComps = const [],
     int fallbackSetsCount = 0,
   }) {
-    final categoryBase = _baseQtyLookup(rawCategoryComps);
+    final bool isTablesOnly = isTableSetOnlyOrder(orderComps);
+    final categoryBase = isTablesOnly
+        ? _tableBaseQtyLookup(rawCategoryComps)
+        : _baseQtyLookup(rawCategoryComps);
     final qtyByName = <String, int>{};
     final baseByName = <String, int>{};
     final customNames = <String>{};

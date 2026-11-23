@@ -793,6 +793,10 @@ class _WaitingOrdersScreenState extends State<WaitingOrdersScreen> {
           ).toOrangeBadgeLabel() ?? 'لا شيء';
 
           final bottomSafe = MediaQuery.of(ctx).viewPadding.bottom;
+          final bool isTablesOnly = OrderDeliveryHelper.isTableSetOnlyOrder(order['selected_components_json']);
+          final String catLabel = isTablesOnly
+              ? 'طقم ترابيزات : "${order['category_name']}"'
+              : 'طقم ${order['category_name']}';
 
           return Padding(
             padding: EdgeInsets.fromLTRB(16, 12, 16, bottomSafe + 14),
@@ -809,7 +813,11 @@ class _WaitingOrdersScreenState extends State<WaitingOrdersScreen> {
                         color: Colors.green.withValues(alpha: 0.1),
                         borderRadius: BorderRadius.circular(10),
                       ),
-                      child: Icon(Icons.local_shipping_rounded, color: Colors.green.shade700, size: 22),
+                      child: Icon(
+                        isTablesOnly ? Icons.table_restaurant_rounded : Icons.local_shipping_rounded,
+                        color: isTablesOnly ? const Color(0xFF0D9488) : Colors.green.shade700,
+                        size: 22,
+                      ),
                     ),
                     const SizedBox(width: 10),
                     Expanded(
@@ -826,8 +834,12 @@ class _WaitingOrdersScreenState extends State<WaitingOrdersScreen> {
                             overflow: TextOverflow.ellipsis,
                           ),
                           Text(
-                            'طقم ${order['category_name']} • ${order['order_type']}',
-                            style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+                            '$catLabel • ${order['order_type']}',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: isTablesOnly ? FontWeight.bold : FontWeight.normal,
+                              color: isTablesOnly ? const Color(0xFF0F766E) : Colors.grey.shade700,
+                            ),
                             overflow: TextOverflow.ellipsis,
                           ),
                         ],
@@ -916,7 +928,9 @@ class _WaitingOrdersScreenState extends State<WaitingOrdersScreen> {
                     child: Text(
                       orderPieces.isNotEmpty
                           ? 'سيتم تسليم كامل الطلب ($totalAvailablePieces قطعة) وخصمها من رصيد المخزن ونقل الطلب إلى صفحة (تم التسليم).'
-                          : 'سيتم تأكيد تسليم طقم (${order['category_name']}) بالكامل وخصمه من رصيد المخزن.',
+                          : (isTablesOnly
+                              ? 'سيتم تأكيد تسليم طقم ترابيزات (${order['category_name']}) بالكامل وخصمه من رصيد المخزن.'
+                              : 'سيتم تأكيد تسليم طقم (${order['category_name']}) بالكامل وخصمه من رصيد المخزن.'),
                       style: TextStyle(fontSize: 13, color: Colors.green.shade900, height: 1.4),
                     ),
                   )
