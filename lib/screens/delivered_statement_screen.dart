@@ -5,6 +5,7 @@ import '../core/app_events.dart';
 import '../core/app_notification.dart';
 import '../core/app_settings_service.dart';
 import '../core/app_theme.dart';
+import '../core/category_stock_helper.dart';
 import '../core/db_helper.dart';
 import '../core/delivered_statement_helper.dart';
 import '../core/share_helper.dart';
@@ -592,6 +593,8 @@ class _DeliveredReceiptCard extends StatelessWidget {
       report.totalSets,
       report.totalIndividualPieces,
     );
+    final bool showBreakdown =
+        categoryLabel != 'جميع الأصناف' || customerLabel != 'جميع العملاء';
 
     return Container(
       decoration: BoxDecoration(
@@ -828,10 +831,10 @@ class _DeliveredReceiptCard extends StatelessWidget {
                           children: [
                             const Icon(Icons.weekend_rounded, size: 18, color: Color(0xFF15803D)),
                             const SizedBox(width: 6),
-                            const Expanded(
+                            Expanded(
                               child: Text(
-                                'ملخص الأصناف المسلّمة',
-                                style: TextStyle(
+                                showBreakdown ? 'تفاصيل الأصناف والتفريدة المسلّمة' : 'ملخص الأصناف المسلّمة',
+                                style: const TextStyle(
                                   fontSize: 14,
                                   fontWeight: FontWeight.bold,
                                   color: Color(0xFF15803D),
@@ -847,9 +850,7 @@ class _DeliveredReceiptCard extends StatelessWidget {
                               child: Text(
                                 report.isEmpty
                                     ? '0'
-                                    : (report.totalTableSets > 0
-                                        ? '$summaryBadge + ${report.totalTableSets} ترابيزات'
-                                        : summaryBadge),
+                                    : '${report.ordersCount} طلبية',
                                 style: const TextStyle(
                                   color: Colors.white,
                                   fontSize: 11,
@@ -869,74 +870,247 @@ class _DeliveredReceiptCard extends StatelessWidget {
                             style: TextStyle(color: Colors.grey, fontSize: 13),
                           ),
                         )
-                      else
+                      else ...[
+                        if (!showBreakdown && report.categorySummaries.length > 1) ...[
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(10, 8, 10, 4),
+                            child: Wrap(
+                              spacing: 6,
+                              runSpacing: 4,
+                              children: report.categorySummaries.map((cat) {
+                                final compactText = UpholstererStatementHelper.formatCompactLine(
+                                  categoryName: cat.categoryName,
+                                  sets: cat.sets > 0 ? cat.sets : cat.tableSets,
+                                  excessPieces: cat.excessPieceTotals,
+                                );
+                                return Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFF1F5F9),
+                                    borderRadius: BorderRadius.circular(6),
+                                    border: Border.all(color: Colors.blueGrey.shade100),
+                                  ),
+                                  child: Text(
+                                    compactText,
+                                    style: const TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.bold,
+                                      color: AppTheme.primaryNavy,
+                                    ),
+                                  ),
+                                );
+                              }).toList(),
+                            ),
+                          ),
+                          const Padding(
+                            padding: EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                            child: Divider(height: 1),
+                          ),
+                        ],
                         Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                           child: Column(
-                            children: report.categorySummaries.asMap().entries.map((entry) {
+                            children: report.items.asMap().entries.map((entry) {
                               final idx = entry.key + 1;
-                              final cat = entry.value;
-                              final compactText = UpholstererStatementHelper.formatCompactLine(
-                                categoryName: cat.categoryName,
-                                sets: cat.sets > 0 ? cat.sets : cat.tableSets,
-                                excessPieces: cat.excessPieceTotals,
-                              );
+                              final item = entry.value;
+                              final isTableOnly = item.isTableOnly;
+                              final badgeText = item.statusBadge ??
+                                  (isTableOnly
+                                      ? (item.tableSets > 0 ? '${item.tableSets} طقم ترابيزة' : '${item.totalPieces} ق')
+                                      : (item.sets > 0 ? '${item.sets} طقم كامل' : '${item.totalPieces} ق'));
+
+                              final isOrder = item.orderType == 'أوردر' || item.orderType == 'اوردر';
+                              final Color typeBg = isOrder ? Colors.red.shade700 : AppTheme.primaryNavy;
+
+                              final breakdownParts = <String>[];
+                              for (final p in item.pieces) {
+                                final pName = (p['name'] ?? '').toString().trim();
+                                final pQty = CategoryStockHelper.parseInt(p['qty']);
+                                if (pName.isNotEmpty && pQty > 0) {
+                                  breakdownParts.add('$pName ($pQty)');
+                                }
+                              }
+                              final breakdownText = breakdownParts.join('  •  ');
+
                               return Container(
-                                margin: const EdgeInsets.only(bottom: 6),
+                                margin: const EdgeInsets.only(bottom: 7),
                                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                                 decoration: BoxDecoration(
                                   color: const Color(0xFFF8FAFC),
                                   borderRadius: BorderRadius.circular(10),
                                   border: Border.all(color: Colors.blueGrey.shade100),
                                 ),
-                                child: Row(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.stretch,
                                   children: [
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                      decoration: BoxDecoration(
-                                        color: const Color(0xFF15803D).withValues(alpha: 0.12),
-                                        borderRadius: BorderRadius.circular(6),
-                                      ),
-                                      child: Text(
-                                        '$idx',
-                                        style: const TextStyle(
-                                          fontSize: 11,
-                                          fontWeight: FontWeight.bold,
-                                          color: Color(0xFF15803D),
-                                        ),
-                                      ),
-                                    ),
-                                    const SizedBox(width: 8),
-                                    Expanded(
-                                      child: FittedBox(
-                                        fit: BoxFit.scaleDown,
-                                        alignment: AlignmentDirectional.centerStart,
-                                        child: Text(
-                                          compactText,
-                                          maxLines: 1,
-                                          style: const TextStyle(
-                                            fontSize: 13.5,
-                                            fontWeight: FontWeight.bold,
-                                            color: AppTheme.primaryNavy,
+                                    // السطر الأول: رقم الطلب + اسم العميل + تاريخ التسليم
+                                    Row(
+                                      children: [
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                          decoration: BoxDecoration(
+                                            color: const Color(0xFF15803D).withValues(alpha: 0.12),
+                                            borderRadius: BorderRadius.circular(6),
+                                          ),
+                                          child: Text(
+                                            '$idx',
+                                            style: const TextStyle(
+                                              fontSize: 11,
+                                              fontWeight: FontWeight.bold,
+                                              color: Color(0xFF15803D),
+                                            ),
                                           ),
                                         ),
-                                      ),
+                                        const SizedBox(width: 7),
+                                        const Icon(Icons.person_rounded, size: 15, color: AppTheme.primaryNavy),
+                                        const SizedBox(width: 4),
+                                        Expanded(
+                                          child: Text(
+                                            item.customerName.isNotEmpty ? item.customerName : 'عميل غير مسجل',
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: const TextStyle(
+                                              fontSize: 13.5,
+                                              fontWeight: FontWeight.bold,
+                                              color: AppTheme.primaryNavy,
+                                            ),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 6),
+                                        Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Icon(Icons.calendar_today_rounded, size: 11.5, color: Colors.grey.shade600),
+                                            const SizedBox(width: 3.5),
+                                            Text(
+                                              item.deliveryDate.isNotEmpty ? item.deliveryDate : 'غير محدد',
+                                              style: TextStyle(
+                                                fontSize: 11,
+                                                fontWeight: FontWeight.w600,
+                                                color: Colors.grey.shade700,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ],
                                     ),
-                                    const SizedBox(width: 6),
-                                    Text(
-                                      '(${cat.totalPieces} ق)',
-                                      style: TextStyle(
-                                        fontSize: 11,
-                                        fontWeight: FontWeight.w600,
-                                        color: Colors.grey.shade600,
-                                      ),
+
+                                    const SizedBox(height: 5),
+
+                                    // السطر الثاني: الصنف والأطقم والشارات بنمط كروت التسليم بالخارج
+                                    Wrap(
+                                      crossAxisAlignment: WrapCrossAlignment.center,
+                                      spacing: 6,
+                                      runSpacing: 4,
+                                      children: [
+                                        Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Icon(
+                                              isTableOnly ? Icons.table_restaurant_rounded : Icons.weekend_rounded,
+                                              size: 15,
+                                              color: isTableOnly ? const Color(0xFF0D9488) : AppTheme.primaryNavy,
+                                            ),
+                                            const SizedBox(width: 4),
+                                            Text(
+                                              item.categoryName,
+                                              style: TextStyle(
+                                                fontWeight: FontWeight.bold,
+                                                fontSize: 12.5,
+                                                color: isTableOnly ? const Color(0xFF0D9488) : const Color(0xFF1E293B),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                        if (item.orderType.isNotEmpty)
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                                            decoration: BoxDecoration(
+                                              color: typeBg,
+                                              borderRadius: BorderRadius.circular(4),
+                                            ),
+                                            child: Text(
+                                              item.orderType,
+                                              style: const TextStyle(
+                                                color: Colors.white,
+                                                fontSize: 9.5,
+                                                fontWeight: FontWeight.bold,
+                                              ),
+                                            ),
+                                          ),
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                                          decoration: BoxDecoration(
+                                            color: isTableOnly
+                                                ? const Color(0xFF0D9488)
+                                                : (item.sets > 0 && item.individualPieces == 0
+                                                    ? const Color(0xFFEF6C00)
+                                                    : const Color(0xFFA16207)),
+                                            borderRadius: BorderRadius.circular(4),
+                                          ),
+                                          child: Text(
+                                            badgeText,
+                                            style: const TextStyle(
+                                              color: Colors.white,
+                                              fontSize: 10,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                        ),
+                                        Text(
+                                          '(${item.totalPieces} ق)',
+                                          style: TextStyle(
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.w600,
+                                            color: Colors.grey.shade600,
+                                          ),
+                                        ),
+                                      ],
                                     ),
+
+                                    // السطر الثالث: التفريدة (عند التصفية بالطقم أو بالعميل)
+                                    if (showBreakdown && breakdownText.isNotEmpty) ...[
+                                      const SizedBox(height: 5),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                        decoration: BoxDecoration(
+                                          color: Colors.white,
+                                          borderRadius: BorderRadius.circular(6),
+                                          border: Border.all(color: Colors.blueGrey.shade100),
+                                        ),
+                                        child: Row(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            const Text(
+                                              'التفريدة: ',
+                                              style: TextStyle(
+                                                fontSize: 12,
+                                                fontWeight: FontWeight.bold,
+                                                color: Color(0xFF0F766E),
+                                              ),
+                                            ),
+                                            Expanded(
+                                              child: Text(
+                                                breakdownText,
+                                                style: const TextStyle(
+                                                  fontSize: 12,
+                                                  fontWeight: FontWeight.w600,
+                                                  color: AppTheme.primaryNavy,
+                                                  height: 1.35,
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ],
                                   ],
                                 ),
                               );
                             }).toList(),
                           ),
                         ),
+                      ],
                     ],
                   ),
                 ),

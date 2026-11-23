@@ -41,6 +41,7 @@ class DeliveredOrderStatementItem {
   final int individualPieces;
   final int totalPieces;
   final List<Map<String, dynamic>> pieces;
+  final String? statusBadge;
 
   const DeliveredOrderStatementItem({
     required this.deliveryDate,
@@ -53,6 +54,7 @@ class DeliveredOrderStatementItem {
     required this.individualPieces,
     required this.totalPieces,
     required this.pieces,
+    this.statusBadge,
   });
 }
 
@@ -182,6 +184,7 @@ class DeliveredStatementHelper {
       );
 
       final bool isTableOnly = OrderDeliveryHelper.isTableSetOnlyOrder(pieces);
+      final String? statusBadge = summary.toStatusBadgeLabel(isTableOnly: isTableOnly);
       final catKey = isTableOnly
           ? 'طقم ترابيزات : "${catName.isNotEmpty ? catName : 'صنف #$catId'}"'
           : (catName.isNotEmpty ? catName : 'صنف #$catId');
@@ -202,6 +205,7 @@ class DeliveredStatementHelper {
         individualPieces: summary.individualPieces,
         totalPieces: summary.totalPieces,
         pieces: pieces,
+        statusBadge: statusBadge,
       ));
     }
 
