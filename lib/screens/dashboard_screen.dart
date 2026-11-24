@@ -120,8 +120,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       final int? id = c['id'] as int?;
       if (id == null) continue;
       try {
-        final List comps = jsonDecode((c['components_json'] ?? '[]').toString());
-        catCompCounts[id] = comps.length;
+        catCompCounts[id] = CategoryStockHelper.getMainComponents(c['components_json']).length;
       } catch (_) {}
     }
 

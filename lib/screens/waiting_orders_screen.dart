@@ -1236,13 +1236,37 @@ class _WaitingOrdersScreenState extends State<WaitingOrdersScreen> {
                                         whereArgs: [order['id']],
                                       );
                                     } else {
-                                      // 1) تحديث طلب الانتظار بالقطع المتبقية وعدد الأطقم الكاملة المتبقي
+                                      final double origTotalPrice =
+                                          ((order['total_price'] ?? 0) as num).toDouble();
+                                      final double origPaidAmount =
+                                          ((order['paid_amount'] ?? 0) as num).toDouble();
+                                      final int totalPiecesInOrder =
+                                          calc.totalDeliveredPieces + calc.totalRemainingPieces;
+                                      final double deliveredRatio = totalPiecesInOrder > 0
+                                          ? (calc.totalDeliveredPieces / totalPiecesInOrder)
+                                          : 0.0;
+                                      final double deliveredTotalPrice =
+                                          (origTotalPrice * deliveredRatio).roundToDouble();
+                                      final double remainingTotalPrice =
+                                          math.max(0.0, origTotalPrice - deliveredTotalPrice);
+                                      final double deliveredPaidAmount = math.min(
+                                        origPaidAmount,
+                                        deliveredTotalPrice > 0
+                                            ? deliveredTotalPrice
+                                            : origPaidAmount,
+                                      );
+                                      final double remainingPaidAmount =
+                                          math.max(0.0, origPaidAmount - deliveredPaidAmount);
+
+                                      // 1) تحديث طلب الانتظار بالقطع المتبقية وعدد الأطقم الكاملة والمبلغ المتبقي
                                       await txn.update(
                                         'orders',
                                         {
                                           'selected_components_json':
                                               jsonEncode(calc.remainingComps),
                                           'sets_count': calc.remainingOrderSets,
+                                          'total_price': remainingTotalPrice,
+                                          'paid_amount': remainingPaidAmount,
                                         },
                                         where: 'id = ?',
                                         whereArgs: [order['id']],
@@ -1266,6 +1290,8 @@ class _WaitingOrdersScreenState extends State<WaitingOrdersScreen> {
                                         'delivery_date': todayStr,
                                         'order_type': order['order_type'],
                                         'sets_count': calc.deliveredSets,
+                                        'total_price': deliveredTotalPrice,
+                                        'paid_amount': deliveredPaidAmount,
                                         'status': 'delivered',
                                         'created_at': order['created_at'] ?? todayStr,
                                       });

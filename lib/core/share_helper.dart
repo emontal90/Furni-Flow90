@@ -12,7 +12,7 @@ import 'pdf_image_document_builder.dart';
 enum ShareFormat { image, pdf }
 
 class ShareHelper {
-  static const MethodChannel _channel = MethodChannel('com.example.furniture_erp/share');
+  static const MethodChannel _channel = MethodChannel('com.furniflow.erp/share');
 
   /// التقاط الويدجت المربوط بـ [boundaryKey] كصورة عالية الدقة (PNG أو بايتات RGBA خام للـ PDF)
   static Future<({Uint8List bytes, int width, int height, bool isRawRgba})?> _captureWidget({

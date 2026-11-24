@@ -7,6 +7,13 @@ import 'dart:typed_data';
 class BackupCrypto {
   static const List<int> magicHeader = [0x4D, 0x54, 0x52, 0x4B, 0x45, 0x4E, 0x43, 0x31]; // "MTRKENC1"
   static const String defaultBackupSecret = 'MobilyaTrack#2026!SecureBackupKey@ERP';
+
+  /// اشتقاق مفتاح تشفير خاص بكل جهاز للنسخ الاحتياطية السحابية والمحلية
+  static String deriveDeviceBackupKey(String deviceCode) {
+    final clean = deviceCode.trim().toUpperCase();
+    final digest = sha256(Uint8List.fromList(utf8.encode('FurniFlow|BackupKey|$clean|2026')));
+    return toHexUpper(digest);
+  }
   static const int _saltLen = 16;
   static const int _ivLen = 16;
   static const int _macLen = 32;

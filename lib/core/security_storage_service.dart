@@ -11,7 +11,7 @@ import 'backup_crypto.dart';
 /// يضمن عدم تعطل البصمة أو مسح الترخيص التجاري عند استعادة نسخة احتياطية أو إعادة ضبط المصنع
 class SecurityStorageService {
   static const MethodChannel _securityChannel =
-      MethodChannel('com.example.furniture_erp/security');
+      MethodChannel('com.furniflow.erp/security');
 
   static const String _fileName = 'mobilya_track_secure.json';
   static Map<String, dynamic>? _memoryCache;
@@ -38,7 +38,17 @@ class SecurityStorageService {
     }
     try {
       if (await file.exists()) {
-        final raw = await file.readAsString();
+        final bytes = await file.readAsBytes();
+        String raw;
+        if (BackupCrypto.isEncryptedBytes(bytes)) {
+          final plain = BackupCrypto.decryptBytes(
+            bytes,
+            passphrase: BackupCrypto.deriveDeviceBackupKey('LOCAL_SECURE_STORE'),
+          );
+          raw = utf8.decode(plain);
+        } else {
+          raw = utf8.decode(bytes);
+        }
         final decoded = jsonDecode(raw);
         if (decoded is Map<String, dynamic>) {
           _memoryCache = Map<String, dynamic>.from(decoded);
@@ -55,7 +65,12 @@ class SecurityStorageService {
     final file = await _getStoreFile();
     if (file == null) return;
     try {
-      await file.writeAsString(jsonEncode(data), flush: true);
+      final plainBytes = Uint8List.fromList(utf8.encode(jsonEncode(data)));
+      final encrypted = BackupCrypto.encryptBytes(
+        plainBytes,
+        passphrase: BackupCrypto.deriveDeviceBackupKey('LOCAL_SECURE_STORE'),
+      );
+      await file.writeAsBytes(encrypted, flush: true);
     } catch (_) {}
   }
 

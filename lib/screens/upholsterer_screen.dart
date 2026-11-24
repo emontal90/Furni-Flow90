@@ -644,7 +644,7 @@ class _UpholstererScreenState extends State<UpholstererScreen>
         name: pName,
         baseQty: baseQ,
         initialQty: 0,
-        maxAllowed: isReceive ? (remQ > 0 ? remQ : -1) : -1,
+        maxAllowed: isReceive ? remQ : -1,
       );
     }).toList();
 
@@ -661,7 +661,7 @@ class _UpholstererScreenState extends State<UpholstererScreen>
         builder: (ctx, setModalState) {
           void syncSets(int n) {
             int clamped = n < 0 ? 0 : n;
-            if (isReceive && remBreak.completeSets > 0 && clamped > remBreak.completeSets) {
+            if (isReceive && clamped > remBreak.completeSets) {
               clamped = remBreak.completeSets;
             }
             setsCount = clamped;
@@ -1182,22 +1182,24 @@ class _UpholstererScreenState extends State<UpholstererScreen>
       final List<Map<String, dynamic>> mergedPieces =
           _buildCategoryWorkshopPieces(category, existingBatch);
 
-      for (final sp in sentPieces) {
+      final nonZeroSentPieces = sentPieces
+          .where((sp) => CategoryStockHelper.parseInt(sp['qty']) > 0)
+          .toList();
+
+      for (final sp in nonZeroSentPieces) {
         final pName = (sp['name'] ?? '').toString().trim();
-        final newQty = CategoryStockHelper.parseInt(sp['qty']);
+        final addQty = CategoryStockHelper.parseInt(sp['qty']);
         final bQty = math.max(1, CategoryStockHelper.parseInt(sp['base_qty'], fallback: 1));
         final idx = mergedPieces.indexWhere((m) => (m['name'] ?? '').toString().trim() == pName);
         if (idx != -1) {
-          mergedPieces[idx]['sent_qty'] = newQty;
+          final curSent = CategoryStockHelper.parseInt(mergedPieces[idx]['sent_qty']);
+          mergedPieces[idx]['sent_qty'] = curSent + addQty;
           mergedPieces[idx]['sent_date'] = today;
-          if (CategoryStockHelper.parseInt(mergedPieces[idx]['received_qty']) > newQty) {
-            mergedPieces[idx]['received_qty'] = newQty;
-          }
         } else {
           mergedPieces.add({
             'name': pName,
             'base_qty': bQty,
-            'sent_qty': newQty,
+            'sent_qty': addQty,
             'received_qty': 0,
             'sent_date': today,
             'received_date': null,
@@ -1211,13 +1213,14 @@ class _UpholstererScreenState extends State<UpholstererScreen>
         totalSent += CategoryStockHelper.parseInt(mp['sent_qty']);
         totalRec += CategoryStockHelper.parseInt(mp['received_qty']);
       }
+      final mainMergedForSend = CategoryStockHelper.getMainComponents(mergedPieces);
       final totalSentSets = CategoryStockHelper.computeBreakdownFromPieces(
-        mergedPieces,
+        mainMergedForSend,
         qtyKey: 'sent_qty',
         expectedComponentCount: catComps.length,
       ).completeSets;
       final totalRecSets = CategoryStockHelper.computeBreakdownFromPieces(
-        mergedPieces,
+        mainMergedForSend,
         qtyKey: 'received_qty',
         expectedComponentCount: catComps.length,
       ).completeSets;
@@ -1263,7 +1266,7 @@ class _UpholstererScreenState extends State<UpholstererScreen>
           'category_name': catName,
           'action_type': 'send',
           'sets_count': sendBreak.completeSets,
-          'pieces_json': jsonEncode(sentPieces),
+          'pieces_json': jsonEncode(nonZeroSentPieces.isNotEmpty ? nonZeroSentPieces : sentPieces),
           'total_pieces': sendBreak.totalPieces,
           'action_date': today,
           'created_at': now12,
@@ -1324,26 +1327,34 @@ class _UpholstererScreenState extends State<UpholstererScreen>
       final mergedPieces = _buildCategoryWorkshopPieces(category, existingBatch);
       final List<Map<String, dynamic>> receiveDeltas = [];
 
-      for (final rp in receivedPieces) {
+      final nonZeroReceivedPieces = receivedPieces
+          .where((rp) => CategoryStockHelper.parseInt(rp['qty']) > 0)
+          .toList();
+
+      for (final rp in nonZeroReceivedPieces) {
         final pName = (rp['name'] ?? '').toString().trim();
-        final targetRec = CategoryStockHelper.parseInt(rp['qty']);
+        final addRec = CategoryStockHelper.parseInt(rp['qty']);
         final bQty = math.max(1, CategoryStockHelper.parseInt(rp['base_qty'], fallback: 1));
         final idx = mergedPieces.indexWhere((m) => (m['name'] ?? '').toString().trim() == pName);
         if (idx != -1) {
           final maxSent = CategoryStockHelper.parseInt(mergedPieces[idx]['sent_qty']);
           final curRec = CategoryStockHelper.parseInt(mergedPieces[idx]['received_qty']);
-          final clampedNewRec = maxSent > 0 ? math.min(maxSent, targetRec) : targetRec;
-          final int delta = clampedNewRec - curRec;
-          mergedPieces[idx]['received_qty'] = clampedNewRec;
-          mergedPieces[idx]['received_date'] = today;
-          receiveDeltas.add({
-            'name': pName,
-            'base_qty': bQty,
-            'delta': delta,
-            'qty': clampedNewRec,
-          });
+          final clampedNewRec = maxSent > 0 ? math.min(maxSent, curRec + addRec) : (curRec + addRec);
+          final int delta = math.max(0, clampedNewRec - curRec);
+          if (delta > 0) {
+            mergedPieces[idx]['received_qty'] = clampedNewRec;
+            mergedPieces[idx]['received_date'] = today;
+            receiveDeltas.add({
+              'name': pName,
+              'base_qty': bQty,
+              'delta': delta,
+              'qty': delta,
+            });
+          }
         }
       }
+
+
 
       int totalSent = 0;
       int totalRec = 0;
@@ -1352,7 +1363,7 @@ class _UpholstererScreenState extends State<UpholstererScreen>
         totalRec += CategoryStockHelper.parseInt(mp['received_qty']);
       }
       final totalRecSets = CategoryStockHelper.computeBreakdownFromPieces(
-        mergedPieces,
+        CategoryStockHelper.getMainComponents(mergedPieces),
         qtyKey: 'received_qty',
         expectedComponentCount: catComps.length,
       ).completeSets;
@@ -1382,7 +1393,7 @@ class _UpholstererScreenState extends State<UpholstererScreen>
           'category_name': catName,
           'action_type': 'receive',
           'sets_count': recBreak.completeSets,
-          'pieces_json': jsonEncode(receivedPieces),
+          'pieces_json': jsonEncode(nonZeroReceivedPieces.isNotEmpty ? nonZeroReceivedPieces : receivedPieces),
           'total_pieces': recBreak.totalPieces,
           'action_date': today,
           'created_at': now12,

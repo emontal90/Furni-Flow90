@@ -319,7 +319,6 @@
     <!-- ============================================================== -->
     <script>
         const DEFAULT_URL = 'https://httdsktwfnrkhhlcznzo.supabase.co';
-        const SIGNING_SECRET = "MobilyaTrack#CommercialLicense#2026!Secret";
 
         let sbClient = null;
         let subscriptions = [];
@@ -366,15 +365,7 @@
             }
         }
 
-        // توليد مفتاح ترخيص مع توقيع مشفر HMAC-SHA256
-        function generateLicenseKey(deviceCode, expiryToken) {
-            const cleanDevice = deviceCode.trim().toUpperCase();
-            const cleanExpiry = expiryToken.trim().toUpperCase();
-            const payload = `${cleanDevice}|${cleanExpiry}`;
-            const hash = CryptoJS.HmacSHA256(payload, SIGNING_SECRET);
-            const sig = hash.toString(CryptoJS.enc.Hex).substring(0, 8).toUpperCase();
-            return `MTK-${cleanExpiry}-${sig}`;
-        }
+        // التوقيع وتوليد التراخيص يتم حصرياً على الخادم عبر Supabase Edge Function (admin-license)
 
         // تنسيق التاريخ إلى YYYYMMDD
         function formatDateToToken(date) {
@@ -907,29 +898,16 @@
             });
             if (!confirmed) return;
 
-            const now = new Date();
-            const expiryDate = new Date(now.getTime() + days * 24 * 60 * 60 * 1000);
-            const expiryToken = formatDateToToken(expiryDate);
-            const licenseKey = generateLicenseKey(sub.device_code, expiryToken);
-
             try {
-                const { error } = await sbClient
-                    .from('app_subscriptions')
-                    .update({
-                        status: 'active',
-                        license_key: licenseKey,
-                        plan_days: days,
-                        starts_at: now.toISOString(),
-                        expires_at: expiryDate.toISOString(),
-                        notes: 'COMMERCIAL_ACTIVATED',
-                        updated_at: now.toISOString()
-                    })
-                    .eq('id', subId);
+                const { data, error } = await sbClient.functions.invoke('admin-license', {
+                    body: { action: 'activate', sub_id: subId, days }
+                });
 
                 if (error) throw error;
+                if (!data || !data.success) throw new Error((data && data.error) || 'فشل التفعيل من الخادم');
                 showToast(`تم تفعيل اشتراك الجهاز (${sub.device_code}) بنجاح!`, true);
                 fetchSubscriptions();
-                showActivationSuccessModal(sub.device_code, days, licenseKey);
+                showActivationSuccessModal(sub.device_code, days, data.license_key);
             } catch (err) {
                 showToast('فشل تفعيل الاشتراك: ' + err.message, false);
             }
@@ -940,27 +918,13 @@
             const sub = subscriptions.find(s => s.id === subId);
             if (!sub) return;
 
-            let baseDate = sub.expires_at ? new Date(sub.expires_at) : new Date();
-            if (baseDate < new Date()) baseDate = new Date();
-
-            const newExpiry = new Date(baseDate.getTime() + delta * 24 * 60 * 60 * 1000);
-            const expiryToken = formatDateToToken(newExpiry);
-            const newLicenseKey = generateLicenseKey(sub.device_code, expiryToken);
-            const newDays = Math.max(1, (sub.plan_days || 30) + delta);
-
             try {
-                const { error } = await sbClient
-                    .from('app_subscriptions')
-                    .update({
-                        expires_at: newExpiry.toISOString(),
-                        plan_days: newDays,
-                        license_key: newLicenseKey,
-                        status: newExpiry > new Date() ? 'active' : 'expired',
-                        updated_at: new Date().toISOString()
-                    })
-                    .eq('id', subId);
+                const { data, error } = await sbClient.functions.invoke('admin-license', {
+                    body: { action: 'adjust_days', sub_id: subId, delta }
+                });
 
                 if (error) throw error;
+                if (!data || !data.success) throw new Error((data && data.error) || 'فشل تعديل الأيام');
                 showToast(`تم تعديل مدة الاشتراك بمقدار (${delta > 0 ? '+' : ''}${delta} يوم)`);
                 fetchSubscriptions();
             } catch (err) {

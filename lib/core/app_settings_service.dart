@@ -65,7 +65,7 @@ class AppSettingsService {
   static const String _backupEncryptKey = 'backup_encryption_enabled';
 
   static const MethodChannel _brandingChannel =
-      MethodChannel('com.example.furniture_erp/backup_transfer');
+      MethodChannel('com.furniflow.erp/backup_transfer');
 
   /// إشعارات لحظية لتحديث السمة وهوية المعرض في كامل التطبيق فوراً
   static final ValueNotifier<ThemeMode> themeModeNotifier =

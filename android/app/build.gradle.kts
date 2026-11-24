@@ -16,7 +16,7 @@ if (hasReleaseKeystore) {
 val allowDebugFallback = project.findProperty("allowDebugReleaseSigning")?.toString()?.toBoolean() == true
 
 android {
-    namespace = "com.example.furniture_erp"
+    namespace = "com.furniflow.erp"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
@@ -27,7 +27,7 @@ android {
 
     defaultConfig {
         // لتوزيع نسخة تجارية مستقلة على متجر Google Play، يمكنك تغيير applicationId إلى معرّفك الخاص
-        applicationId = "com.example.furniture_erp"
+        applicationId = "com.furniflow.erp"
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode

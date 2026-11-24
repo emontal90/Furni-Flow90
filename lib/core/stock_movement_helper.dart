@@ -150,14 +150,17 @@ class StockMovementHelper {
 
       final Map<String, int> pieceQuantities = {};
       final Map<String, int> pieceBaseQuantities = {};
+      final Map<String, bool> pieceIsTable = {};
 
       for (final c in currentComps) {
         final name = (c['name'] ?? '').toString().trim();
         final int qty = CategoryStockHelper.parseInt(c['qty']);
         final int baseQty = CategoryStockHelper.parseInt(c['base_qty'], fallback: 1);
+        final bool isTable = CategoryStockHelper.isTablePiece(c);
         if (name.isNotEmpty) {
           pieceQuantities[name] = qty;
           pieceBaseQuantities[name] = baseQty > 0 ? baseQty : 1;
+          if (isTable) pieceIsTable[name] = true;
         }
       }
 
@@ -244,11 +247,13 @@ class StockMovementHelper {
           'name': e.key,
           'qty': e.value,
           'base_qty': pieceBaseQuantities[e.key] ?? 1,
+          if (pieceIsTable[e.key] == true) 'is_table': true,
         };
       }).toList();
 
-      if (reconstructedComps.isNotEmpty) {
-        catStockSets = CategoryStockHelper.computeBreakdownFromPieces(reconstructedComps).completeSets;
+      final mainReconstructed = CategoryStockHelper.getMainComponents(reconstructedComps);
+      if (mainReconstructed.isNotEmpty) {
+        catStockSets = CategoryStockHelper.computeBreakdownFromPieces(mainReconstructed).completeSets;
       }
       if (catStockSets < 0) catStockSets = 0;
 

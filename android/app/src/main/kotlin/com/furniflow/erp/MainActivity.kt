@@ -1,4 +1,4 @@
-package com.example.furniture_erp
+package com.furniflow.erp
 
 import android.app.Activity
 import android.content.ClipData
@@ -24,10 +24,10 @@ import java.io.FileOutputStream
 
 class MainActivity: FlutterFragmentActivity() {
     companion object {
-        private const val UPDATER_CHANNEL = "com.example.furniture_erp/app_updater"
-        private const val BACKUP_CHANNEL = "com.example.furniture_erp/backup_transfer"
-        private const val SHARE_CHANNEL = "com.example.furniture_erp/share"
-        private const val SECURITY_CHANNEL = "com.example.furniture_erp/security"
+        private const val UPDATER_CHANNEL = "com.furniflow.erp/app_updater"
+        private const val BACKUP_CHANNEL = "com.furniflow.erp/backup_transfer"
+        private const val SHARE_CHANNEL = "com.furniflow.erp/share"
+        private const val SECURITY_CHANNEL = "com.furniflow.erp/security"
         private const val ALLOWED_RELEASE_URL_PREFIX = "https://github.com/emontal90/Furni-Flow90/releases"
         private const val PICK_BACKUP_REQUEST_CODE = 4091
         private const val CREATE_BACKUP_DOC_REQUEST_CODE = 4092

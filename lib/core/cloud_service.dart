@@ -317,14 +317,18 @@ class CloudService {
     try {
       final baseUrl = await getSupabaseUrl();
       final headers = await _getHeaders();
-      final cleanDevice = Uri.encodeComponent(deviceCode.trim().toUpperCase());
+      final cleanDevice = deviceCode.trim().toUpperCase();
 
       final url = Uri.parse(
-        '$baseUrl/rest/v1/app_subscriptions?device_code=eq.$cleanDevice&order=created_at.desc&limit=1',
+        '$baseUrl/rest/v1/rpc/get_device_subscription',
       );
 
       final response = await http
-          .get(url, headers: headers)
+          .post(
+            url,
+            headers: headers,
+            body: jsonEncode({'p_device_code': cleanDevice}),
+          )
           .timeout(const Duration(seconds: 12));
       if (response.statusCode >= 200 && response.statusCode < 300) {
         final decoded = jsonDecode(response.body);
@@ -374,7 +378,7 @@ class CloudService {
 
   /// بدء حلقة المزامنة اللحظية المستمرة للاشتراكات في الخلفية
   /// تقوم بالتحقق اللحظي مع السحابة دورياً لتطبيق الإيقاف، التشفير، التفعيل، أو تعديل الأيام فوراً
-  static void startRealtimeSyncLoop({Duration interval = const Duration(seconds: 4)}) {
+  static void startRealtimeSyncLoop({Duration interval = const Duration(minutes: 5)}) {
     _realtimeSyncTimer?.cancel();
     triggerRealtimeSyncNow();
     _realtimeSyncTimer = Timer.periodic(interval, (_) {
@@ -466,7 +470,10 @@ class CloudService {
 
       // قراءة بايتات قاعدة البيانات وتشفيرها تشفيراً عسكرياً قبل الإرسال (AES-256)
       final rawBytes = await dbFile.readAsBytes();
-      final encryptedBytes = BackupCrypto.encryptBytes(rawBytes);
+      final encryptedBytes = BackupCrypto.encryptBytes(
+        rawBytes,
+        passphrase: BackupCrypto.deriveDeviceBackupKey(deviceCode),
+      );
 
       final baseUrl = await getSupabaseUrl();
       final anonKey = await getAnonKey();
@@ -526,23 +533,22 @@ class CloudService {
           ? '${(sizeBytes / 1024).toStringAsFixed(1)} KB'
           : '${(sizeBytes / (1024 * 1024)).toStringAsFixed(2)} MB';
 
-      // 2. تسجيل النسخة في جدول cloud_backups في سوبا بيز
+      // 2. تسجيل النسخة عبر دالة RPC مقيدة برقم الجهاز
       final insertHeaders = await _getHeaders(isPost: true);
-      final insertPayload = {
-        'device_code': deviceCode,
-        'file_name': fileName,
-        'storage_path': storageRelativePath,
-        'file_size_bytes': sizeBytes,
-        'file_size_formatted': sizeFormatted,
-        'is_auto': isAuto,
-        'created_at': DateTime.now().toUtc().toIso8601String(),
+      final rpcPayload = {
+        'p_device_code': deviceCode,
+        'p_file_name': fileName,
+        'p_storage_path': storageRelativePath,
+        'p_file_size_bytes': sizeBytes,
+        'p_file_size_formatted': sizeFormatted,
+        'p_is_auto': isAuto,
       };
 
       final dbInsertResponse = await http
           .post(
-            Uri.parse('$baseUrl/rest/v1/cloud_backups'),
+            Uri.parse('$baseUrl/rest/v1/rpc/register_device_backup'),
             headers: insertHeaders,
-            body: jsonEncode(insertPayload),
+            body: jsonEncode(rpcPayload),
           )
           .timeout(const Duration(seconds: 15));
 
@@ -550,7 +556,9 @@ class CloudService {
       if (dbInsertResponse.statusCode >= 200 &&
           dbInsertResponse.statusCode < 300) {
         final decoded = jsonDecode(dbInsertResponse.body);
-        if (decoded is List && decoded.isNotEmpty) {
+        if (decoded is Map<String, dynamic>) {
+          createdItem = CloudBackupItem.fromJson(decoded);
+        } else if (decoded is List && decoded.isNotEmpty) {
           createdItem =
               CloudBackupItem.fromJson(decoded.first as Map<String, dynamic>);
         }
@@ -586,14 +594,18 @@ class CloudService {
     try {
       final baseUrl = await getSupabaseUrl();
       final headers = await _getHeaders();
-      final cleanDevice = Uri.encodeComponent(deviceCode.trim().toUpperCase());
+      final cleanDevice = deviceCode.trim().toUpperCase();
 
       final url = Uri.parse(
-        '$baseUrl/rest/v1/cloud_backups?device_code=eq.$cleanDevice&order=created_at.desc',
+        '$baseUrl/rest/v1/rpc/list_device_backups',
       );
 
       final response = await http
-          .get(url, headers: headers)
+          .post(
+            url,
+            headers: headers,
+            body: jsonEncode({'p_device_code': cleanDevice}),
+          )
           .timeout(const Duration(seconds: 15));
       if (response.statusCode >= 200 && response.statusCode < 300) {
         final decoded = jsonDecode(response.body);
@@ -640,7 +652,15 @@ class CloudService {
       // فك التشفير
       Uint8List plainDbBytes;
       if (BackupCrypto.isEncryptedBytes(downloadedEncryptedBytes)) {
-        plainDbBytes = BackupCrypto.decryptBytes(downloadedEncryptedBytes);
+        try {
+          plainDbBytes = BackupCrypto.decryptBytes(
+            downloadedEncryptedBytes,
+            passphrase: BackupCrypto.deriveDeviceBackupKey(item.deviceCode),
+          );
+        } catch (_) {
+          // التوافق العكسي مع النسخ السحابية القديمة
+          plainDbBytes = BackupCrypto.decryptBytes(downloadedEncryptedBytes);
+        }
       } else {
         plainDbBytes = downloadedEncryptedBytes;
       }
@@ -696,11 +716,18 @@ class CloudService {
         'Authorization': 'Bearer $anonKey',
       });
 
-      // 2. حذف السجل من جدول cloud_backups
+      // 2. حذف السجل عبر دالة RPC مقيدة برقم الجهاز
       final dbUrl = Uri.parse(
-        '$baseUrl/rest/v1/cloud_backups?id=eq.${item.id}',
+        '$baseUrl/rest/v1/rpc/delete_device_backup',
       );
-      final resp = await http.delete(dbUrl, headers: headers);
+      final resp = await http.post(
+        dbUrl,
+        headers: headers,
+        body: jsonEncode({
+          'p_id': item.id,
+          'p_device_code': item.deviceCode,
+        }),
+      );
       return resp.statusCode >= 200 && resp.statusCode < 300;
     } catch (_) {
       return false;

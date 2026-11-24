@@ -49,7 +49,7 @@ jobs:
             echo "::error::Missing Android signing secrets! Please add KEYSTORE_BASE64, KEYSTORE_PASSWORD, KEY_ALIAS, and KEY_PASSWORD in GitHub Repo Settings -> Secrets and variables -> Actions."
             exit 1
           fi
-          KEYSTORE_PATH="$RUNNER_TEMP/el-alfy-release.jks"
+          KEYSTORE_PATH="$RUNNER_TEMP/furniflow-release.jks"
           printf '%s' "$KEYSTORE_BASE64" | tr -d '\r\n ' | base64 --decode > "$KEYSTORE_PATH"
           chmod 600 "$KEYSTORE_PATH"
           CLEAN_STORE_PASS=$(printf '%s' "$KEYSTORE_PASSWORD" | tr -d '\r\n')
@@ -83,13 +83,12 @@ jobs:
       - name: Clean Signing Secrets
         if: always()
         run: |
-          rm -f android/key.properties "$RUNNER_TEMP/el-alfy-release.jks"
+          rm -f android/key.properties "$RUNNER_TEMP/furniflow-release.jks"
 
       - name: Prepare APK Files
         run: |
           cp build/app/outputs/flutter-apk/app-release.apk build/app/outputs/flutter-apk/FurniFlow-App.apk
           cp build/app/outputs/flutter-apk/app-release.apk build/app/outputs/flutter-apk/FurniFlow-v${{ steps.version.outputs.APP_VERSION }}.apk
-          cp build/app/outputs/flutter-apk/app-release.apk build/app/outputs/flutter-apk/el-Alfy-App.apk
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
@@ -113,6 +112,5 @@ jobs:
           files: |
             build/app/outputs/flutter-apk/FurniFlow-App.apk
             build/app/outputs/flutter-apk/FurniFlow-v${{ steps.version.outputs.APP_VERSION }}.apk
-            build/app/outputs/flutter-apk/el-Alfy-App.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

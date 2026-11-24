@@ -29,7 +29,7 @@ class AppUpdateInfo {
 
 class AppUpdateService {
   static const MethodChannel _channel =
-      MethodChannel('com.example.furniture_erp/app_updater');
+      MethodChannel('com.furniflow.erp/app_updater');
 
   /// يخزن معلومات التحديث المتاح لحظياً لتحديث الواجهات وشارة الترس (Badge 1)
   static final ValueNotifier<AppUpdateInfo?> availableUpdateNotifier =
@@ -136,9 +136,7 @@ class AppUpdateService {
           if (name == 'MobilyaTrack-App.apk') {
             preferredAsset = item;
           }
-          if (name == 'el-Alfy-App.apk') {
-            legacyAsset = item;
-          }
+
           fallbackApkAsset ??= item;
         }
 

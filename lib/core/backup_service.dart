@@ -15,7 +15,7 @@ import 'db_helper.dart';
 class BackupService {
   static const int maxBackups = 5;
   static const MethodChannel _transferChannel =
-      MethodChannel('com.example.furniture_erp/backup_transfer');
+      MethodChannel('com.furniflow.erp/backup_transfer');
 
   /// مجلد حفظ النسخ الاحتياطية على الموبايل والكمبيوتر
   static Future<Directory> getBackupDir() async {

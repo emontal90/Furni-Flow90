@@ -87,6 +87,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
 
   Future<void> _showOfflineActivationDialog() async {
     final keyCtrl = TextEditingController();
+    try {
     await showDialog(
       context: context,
       builder: (dCtx) => AlertDialog(
@@ -145,6 +146,9 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
         ],
       ),
     );
+    } finally {
+      keyCtrl.dispose();
+    }
   }
 
   Future<void> _showConfirmationDialog() async {

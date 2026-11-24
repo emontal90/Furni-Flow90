@@ -501,7 +501,16 @@ class OrderDeliveryHelper {
       }
 
       int newStockSets = oldStockSets;
-      if (updatedComps.isNotEmpty) {
+      final mainUpdatedComps = updatedComps
+          .where((c) => c['is_table'] != true && c['is_table'] != 1)
+          .toList();
+      if (mainUpdatedComps.isNotEmpty) {
+        newStockSets = mainUpdatedComps.map<int>((c) {
+          final q = _parseInt(c['qty']);
+          final b = _parseInt(c['base_qty'], fallback: 1);
+          return q ~/ (b > 0 ? b : 1);
+        }).reduce(math.min);
+      } else if (updatedComps.isNotEmpty) {
         newStockSets = updatedComps.map<int>((c) {
           final q = _parseInt(c['qty']);
           final b = _parseInt(c['base_qty'], fallback: 1);
