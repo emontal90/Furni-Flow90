@@ -102,8 +102,8 @@ class CloudSubscriptionData {
 
   int get daysRemaining {
     if (expiresAt == null) return 0;
-    final diff = expiresAt!.difference(DateTime.now()).inDays;
-    return diff > 0 ? diff : 0;
+    final diffSec = expiresAt!.difference(DateTime.now()).inSeconds;
+    return diffSec > 0 ? (diffSec / 86400).ceil() : 0;
   }
 
   factory CloudSubscriptionData.fromJson(Map<String, dynamic> json) {
@@ -328,23 +328,40 @@ class CloudService {
       if (response.statusCode >= 200 && response.statusCode < 300) {
         final decoded = jsonDecode(response.body);
         if (decoded is List && decoded.isNotEmpty) {
-          final item = CloudSubscriptionData.fromJson(
-              decoded.first as Map<String, dynamic>);
+          final firstMap = decoded.first as Map<String, dynamic>;
+          final item = CloudSubscriptionData.fromJson(firstMap);
           cloudStatusNotifier.value = item;
 
-          // إذا كان الاشتراك نشطاً ويحتوي على مفتاح ترخيص، نقوم بتفعيله تلقائياً في التطبيق
+          // فحص هل قامت الإدارة بإعادة تمكين التجربة من قاعدة البيانات
+          final notes = (firstMap['notes'] ?? '').toString();
+          if (notes.contains('RESET_TRIAL')) {
+            await LicenseService.resetTrial();
+          }
+
+          // إذا كان الاشتراك نشطاً ويحتوي على مفتاح ترخيص، نقوم بتفعيله تلقائياً
           if (item.isActive &&
               item.licenseKey != null &&
               item.licenseKey!.isNotEmpty) {
+            await LicenseService.markTrialConsumed();
             await LicenseService.activateWithKey(item.licenseKey!);
           } else if (item.isPaused || item.isExpired) {
-            // في حالة إيقاف الاشتراك أو انتهائه
-            if (item.isPaused) {
-              await SecurityStorageService.setString('license_key', null);
-              await LicenseService.checkStatus();
-            }
+            // في حالة إيقاف الاشتراك أو انتهائه: استهلاك التجربة ومسح المفتاح لإغلاق البرنامج
+            await LicenseService.markTrialConsumed();
+            await SecurityStorageService.setString('license_key', null);
+            await LicenseService.checkStatus();
           }
           return item;
+        } else if (decoded is List && decoded.isEmpty) {
+          // إذا تم حذف الاشتراك من البورتال
+          cloudStatusNotifier.value = null;
+          final wasConsumed = await LicenseService.isTrialConsumed();
+          final storedKey = await SecurityStorageService.getString('license_key');
+          if (wasConsumed || (storedKey != null && storedKey.isNotEmpty)) {
+            // حذف الاشتراك يؤدي لتشفير وإغلاق البرنامج
+            await LicenseService.markTrialConsumed();
+            await SecurityStorageService.setString('license_key', null);
+            await LicenseService.checkStatus();
+          }
         }
       }
     } catch (_) {}

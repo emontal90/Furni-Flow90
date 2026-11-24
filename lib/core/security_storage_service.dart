@@ -92,6 +92,12 @@ class SecurityStorageService {
     await _writeAll(map);
   }
 
+  static Future<void> remove(String key) async {
+    final map = await _readAll();
+    map.remove(key);
+    await _writeAll(map);
+  }
+
   static Future<int?> getInt(String key) async {
     final map = await _readAll();
     final val = map[key];

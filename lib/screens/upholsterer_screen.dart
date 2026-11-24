@@ -596,11 +596,6 @@ class _UpholstererScreenState extends State<UpholstererScreen>
       qtyKey: 'sent_qty',
       expectedComponentCount: catComps.length,
     );
-    final recBreakdown = CategoryStockHelper.computeBreakdownFromPieces(
-      workshopPieces,
-      qtyKey: 'received_qty',
-      expectedComponentCount: catComps.length,
-    );
 
     if (isReceive && sentBreakdown.totalPieces <= 0) {
       AppNotification.showInfo(
@@ -627,7 +622,19 @@ class _UpholstererScreenState extends State<UpholstererScreen>
     );
     String? uphError;
 
-    int setsCount = isReceive ? recBreakdown.completeSets : sentBreakdown.completeSets;
+    final remBreak = CategoryStockHelper.computeBreakdownFromPieces(
+      workshopPieces,
+      qtyKey: 'sent_qty',
+      subtractKey: 'received_qty',
+      expectedComponentCount: catComps.length,
+    );
+
+    int setsCount;
+    if (isReceive) {
+      setsCount = remBreak.completeSets;
+    } else {
+      setsCount = remBreak.completeSets > 0 ? remBreak.completeSets : 1;
+    }
     final setsCtrl = TextEditingController(text: '$setsCount');
 
     final List<_PieceInputItem> pieceItems = workshopPieces.map((wp) {
@@ -635,12 +642,24 @@ class _UpholstererScreenState extends State<UpholstererScreen>
       final baseQ = math.max(1, CategoryStockHelper.parseInt(wp['base_qty'], fallback: 1));
       final sentQ = CategoryStockHelper.parseInt(wp['sent_qty']);
       final recQ = CategoryStockHelper.parseInt(wp['received_qty']);
-      final int initialQ = isReceive ? recQ : sentQ;
+      final remQ = math.max(0, sentQ - recQ);
+
+      int initialQ;
+      if (isReceive) {
+        if (setsCount > 0) {
+          initialQ = setsCount * baseQ;
+        } else {
+          initialQ = remQ;
+        }
+      } else {
+        initialQ = setsCount * baseQ;
+      }
+
       return _PieceInputItem(
         name: pName,
         baseQty: baseQ,
         initialQty: initialQ,
-        maxAllowed: isReceive ? (sentQ > 0 ? sentQ : -1) : -1,
+        maxAllowed: isReceive ? (remQ > 0 ? remQ : -1) : -1,
       );
     }).toList();
 
@@ -657,8 +676,8 @@ class _UpholstererScreenState extends State<UpholstererScreen>
         builder: (ctx, setModalState) {
           void syncSets(int n) {
             int clamped = n < 0 ? 0 : n;
-            if (isReceive && clamped > sentBreakdown.completeSets) {
-              clamped = sentBreakdown.completeSets;
+            if (isReceive && remBreak.completeSets > 0 && clamped > remBreak.completeSets) {
+              clamped = remBreak.completeSets;
             }
             setsCount = clamped;
             setsCtrl.text = '$setsCount';
@@ -858,7 +877,7 @@ class _UpholstererScreenState extends State<UpholstererScreen>
                               ),
                               if (isReceive)
                                 Text(
-                                  'أقصى عدد أطقم مكتملة مسلّمة: ${sentBreakdown.completeSets}',
+                                  'أقصى عدد أطقم مكتملة متاحة للاستلام: ${remBreak.completeSets}',
                                   maxLines: 1,
                                   style: TextStyle(fontSize: 11, color: AppTheme.textMuted(ctx)),
                                 ),

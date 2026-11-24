@@ -32,14 +32,14 @@ class LicenseInfo {
       (state == LicenseState.activated || state == LicenseState.trial) &&
       !isClockTampered;
 
-  /// حساب عدد الأيام المتبقية في الاشتراك بدقة
+  /// حساب عدد الأيام المتبقية في الاشتراك بدقة مطابقة للبورتال
   int get daysRemaining {
     if (isPermanent) return 99999;
     if (expiresAt != null) {
       final now = DateTime.now();
       if (now.isAfter(expiresAt!)) return 0;
-      final diff = expiresAt!.difference(now);
-      return diff.inDays > 0 ? diff.inDays : (diff.inHours > 0 ? 1 : 0);
+      final diffSec = expiresAt!.difference(now).inSeconds;
+      return diffSec > 0 ? (diffSec / 86400).ceil() : 0;
     }
     return trialDaysRemaining;
   }
@@ -262,6 +262,19 @@ class LicenseService {
       }
     }
 
+    // فحص ما إذا كانت التجربة المجانية قد تم إلغاؤها بشكل دائم بسبب اشتراك مدفوع سابق
+    final trialConsumed = await isTrialConsumed();
+    if (trialConsumed) {
+      final info = LicenseInfo(
+        state: LicenseState.expired,
+        deviceCode: deviceCode,
+        trialDaysRemaining: 0,
+        isPermanent: false,
+      );
+      statusNotifier.value = info;
+      return info;
+    }
+
     // حساب الفترة التجريبية الموثقة برقم العتاد الثابت (30 يوماً من أول تشغيل غير قابلة للتجديد)
     final firstRun = await _resolveFirstRunDate(deviceCode);
     final now = DateTime.now();
@@ -280,6 +293,48 @@ class LicenseService {
     return info;
   }
 
+  /// فحص هل تم استهلاك أو إلغاء الفترة التجريبية نهائياً بسبب اشتراك مدفوع
+  static Future<bool> isTrialConsumed() async {
+    final flag = await SecurityStorageService.getBool('trial_consumed');
+    if (flag == true) return true;
+    final anchorFile = await _getPersistentAnchorFile();
+    if (anchorFile != null && await anchorFile.exists()) {
+      try {
+        final content = await anchorFile.readAsString();
+        if (content.contains('TRIAL_CONSUMED')) return true;
+      } catch (_) {}
+    }
+    return false;
+  }
+
+  /// تسجيل إلغاء التجربة المجانية نهائياً عند الاشتراك في باقة مدفوعة
+  static Future<void> markTrialConsumed() async {
+    await SecurityStorageService.setBool('trial_consumed', true);
+    final anchorFile = await _getPersistentAnchorFile();
+    if (anchorFile != null) {
+      try {
+        final content = await anchorFile.exists() ? await anchorFile.readAsString() : '';
+        if (!content.contains('TRIAL_CONSUMED')) {
+          await anchorFile.writeAsString('$content\nTRIAL_CONSUMED', flush: true);
+        }
+      } catch (_) {}
+    }
+  }
+
+  /// إعادة تمكين التجربة المجانية فقط إذا تم إلغاء ذلك من قاعدة البيانات
+  static Future<void> resetTrial() async {
+    await SecurityStorageService.remove('trial_consumed');
+    final anchorFile = await _getPersistentAnchorFile();
+    if (anchorFile != null && await anchorFile.exists()) {
+      try {
+        var content = await anchorFile.readAsString();
+        content = content.replaceAll('TRIAL_CONSUMED', '').trim();
+        await anchorFile.writeAsString(content, flush: true);
+      } catch (_) {}
+    }
+    await checkStatus();
+  }
+
   /// تفعيل البرنامج بكود ترخيص تجاري
   static Future<String?> activateWithKey(String rawKey) async {
     final deviceCode = await SecurityStorageService.getDeviceCode();
@@ -287,6 +342,7 @@ class LicenseService {
     if (!res.valid) {
       return res.error ?? 'كود التفعيل غير صالح.';
     }
+    await markTrialConsumed();
     await SecurityStorageService.setString('license_key', rawKey.trim().toUpperCase());
     await checkStatus();
     return null;

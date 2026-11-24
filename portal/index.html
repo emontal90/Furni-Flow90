@@ -73,6 +73,16 @@
             background: #2a3d5e;
             border-radius: 4px;
         }
+        /* إلغاء أسهم زيادة وإنقاص الأرقام من جميع الحقول الرقمية */
+        input[type=number]::-webkit-inner-spin-button,
+        input[type=number]::-webkit-outer-spin-button {
+            -webkit-appearance: none !important;
+            margin: 0 !important;
+        }
+        input[type=number] {
+            -moz-appearance: textfield !important;
+            appearance: textfield !important;
+        }
     </style>
 </head>
 <body class="min-vh-100 flex flex-col justify-between selection:bg-gold-500 selection:text-navy-950">
@@ -828,28 +838,23 @@
 
                             <!-- كود الترخيص إن وجد -->
                             ${sub.license_key ? `
-                                <div class="flex items-center justify-between bg-slate-900/60 px-2.5 py-1 rounded-lg border border-slate-800/80 text-[11px]">
-                                    <span class="text-slate-400">كود الترخيص:</span>
-                                    <div class="flex items-center gap-1.5">
-                                        <span class="font-mono text-emerald-400 text-[10px] truncate max-w-[170px]" title="${sub.license_key}">${sub.license_key}</span>
-                                        <button onclick="copyText('${sub.license_key}')" title="نسخ الكود" class="text-slate-400 hover:text-white cursor-pointer">
-                                            <i class="fa-regular fa-copy text-[10px]"></i>
-                                        </button>
-                                    </div>
+                                <div class="flex items-center justify-between bg-slate-900/60 px-3 py-1.5 rounded-xl border border-slate-800/80 text-[11px]">
+                                    <span class="text-slate-400 font-bold">كود الترخيص:</span>
+                                    <span class="font-mono text-emerald-400 text-xs font-bold truncate max-w-[200px]" title="${sub.license_key}">${sub.license_key}</span>
                                 </div>
                             ` : ''}
                         </div>
 
-                        <!-- أسفل الكارد: تعديل الأيام وتطبيق وأزرار الإجراءات بحجم لمس كبير ومريح للموبايل -->
-                        <div class="pt-3 border-t border-slate-800/80 space-y-2.5">
+                        <!-- أسفل الكارد: تعديل الأيام وتطبيق وأزرار الإجراءات بمقاس مريح للموبايل -->
+                        <div class="pt-3 border-t border-slate-800/80 space-y-3">
                             <!-- صف تعديل الأيام وتطبيق -->
                             <div class="flex items-center gap-2">
                                 <span class="text-xs text-slate-300 font-bold whitespace-nowrap">تعديل الأيام:</span>
                                 <div class="flex-1 flex items-center gap-2">
-                                    <input type="number" id="days_input_${sub.id}" value="" placeholder="عدد الأيام..." min="1"
-                                        class="flex-1 min-h-[42px] bg-navy-950 border border-slate-700 focus:border-gold-400 rounded-xl px-3 text-center font-bold text-white text-sm focus:outline-none transition-colors" title="أدخل عدد الأيام">
-                                    <button onclick="applyCustomDays('${sub.id}')" title="تطبيق الأيام المدخلة" 
-                                        class="min-h-[42px] px-5 rounded-xl bg-blue-600 hover:bg-blue-500 active:scale-95 text-white text-xs font-black shadow-md shadow-blue-900/30 transition-all flex items-center justify-center gap-1.5 cursor-pointer">
+                                    <input type="number" id="days_input_${sub.id}" value="" placeholder="+5 أو -5..." inputmode="numeric"
+                                        class="flex-1 min-h-[46px] bg-navy-950 border border-slate-700 focus:border-gold-400 rounded-xl px-3 text-center font-bold text-white text-base focus:outline-none transition-colors" title="أدخل عدد الأيام للإضافة أو الخصم (+ أو -)">
+                                    <button onclick="applyCustomDays('${sub.id}')" title="تطبيق الإضافة أو الخصم" 
+                                        class="min-h-[46px] px-6 rounded-xl bg-blue-600 hover:bg-blue-500 active:scale-95 text-white text-sm font-black shadow-md shadow-blue-900/30 transition-all flex items-center justify-center gap-1.5 cursor-pointer">
                                         <i class="fa-solid fa-check"></i>
                                         <span>تطبيق</span>
                                     </button>
@@ -857,24 +862,24 @@
                             </div>
 
                             <!-- أزرار الإجراءات بمقاس مريح للأصابع على شاشات الموبايل -->
-                            <div class="grid grid-cols-2 gap-2 pt-1">
+                            <div class="grid grid-cols-2 gap-2.5 pt-1">
                                 ${sub.status !== 'active' ? `
                                     <button onclick="activateSubscription('${sub.id}')" title="تفعيل الاشتراك الآن"
-                                        class="col-span-1 min-h-[44px] rounded-xl bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white font-black text-xs flex items-center justify-center gap-2 shadow-lg shadow-emerald-950/40 transition-all cursor-pointer">
-                                        <i class="fa-solid fa-bolt text-sm"></i>
+                                        class="col-span-1 min-h-[46px] rounded-xl bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white font-black text-sm flex items-center justify-center gap-2 shadow-lg shadow-emerald-950/40 transition-all cursor-pointer">
+                                        <i class="fa-solid fa-bolt text-base"></i>
                                         <span>تفعيل فوري</span>
                                     </button>
                                 ` : `
                                     <button onclick="togglePause('${sub.id}', '${sub.status}')" title="${sub.status === 'paused' ? 'استئناف الاشتراك' : 'إيقاف مؤقت للاشتراك'}"
-                                        class="col-span-1 min-h-[44px] rounded-xl bg-navy-950 border border-amber-500/40 hover:bg-amber-500/10 active:scale-95 text-amber-400 font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer">
-                                        <i class="fa-solid ${sub.status === 'paused' ? 'fa-play' : 'fa-pause'} text-sm"></i>
+                                        class="col-span-1 min-h-[46px] rounded-xl bg-navy-950 border border-amber-500/50 hover:bg-amber-500/10 active:scale-95 text-amber-400 font-bold text-sm flex items-center justify-center gap-2 transition-all cursor-pointer">
+                                        <i class="fa-solid ${sub.status === 'paused' ? 'fa-play' : 'fa-pause'} text-base"></i>
                                         <span>${sub.status === 'paused' ? 'استئناف' : 'إيقاف مؤقت'}</span>
                                     </button>
                                 `}
 
                                 <button onclick="deleteSubscription('${sub.id}')" title="حذف هذا الاشتراك نهائياً"
-                                    class="col-span-1 min-h-[44px] rounded-xl bg-navy-950 border border-rose-500/40 hover:bg-rose-500/10 active:scale-95 text-rose-400 font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer">
-                                    <i class="fa-solid fa-trash-can text-sm"></i>
+                                    class="col-span-1 min-h-[46px] rounded-xl bg-navy-950 border border-rose-500/50 hover:bg-rose-500/10 active:scale-95 text-rose-400 font-bold text-sm flex items-center justify-center gap-2 transition-all cursor-pointer">
+                                    <i class="fa-solid fa-trash-can text-base"></i>
                                     <span>حذف</span>
                                 </button>
                             </div>
@@ -916,6 +921,7 @@
                         plan_days: days,
                         starts_at: now.toISOString(),
                         expires_at: expiryDate.toISOString(),
+                        notes: 'COMMERCIAL_ACTIVATED',
                         updated_at: now.toISOString()
                     })
                     .eq('id', subId);
@@ -962,50 +968,58 @@
             }
         }
 
-        // 3. Apply Custom Typed Days
+        // 3. Apply Custom Typed Days (Relative Addition or Deduction)
         async function applyCustomDays(subId) {
             const sub = subscriptions.find(s => s.id === subId);
             if (!sub) return;
 
             const input = document.getElementById(`days_input_${subId}`);
-            const days = parseInt(input.value);
-            if (isNaN(days) || days <= 0) {
-                showToast('يرجى كتابة عدد أيام صالح', false);
+            const delta = parseInt(input.value);
+            if (isNaN(delta) || delta === 0) {
+                showToast('يرجى كتابة عدد الأيام المراد إضافتها أو خصمها (مثل 5 أو -5)', false);
                 return;
             }
 
+            const now = new Date();
+            let currentExpiry = sub.expires_at ? new Date(sub.expires_at) : now;
+            if (currentExpiry < now) currentExpiry = now;
+
+            const newExpiry = new Date(currentExpiry.getTime() + delta * 24 * 60 * 60 * 1000);
+            const newRemainingDays = Math.max(0, Math.ceil((newExpiry - now) / (1000 * 60 * 60 * 24)));
+
+            const actionWord = delta > 0 ? `إضافة (${delta}) يوماً` : `خصم (${Math.abs(delta)}) يوماً`;
             const confirmed = await showConfirmDialog({
-                title: 'تعديل مدة الاشتراك',
-                message: `هل أنت متأكد من تعيين مدة الاشتراك للجهاز <strong>(${sub.device_code})</strong> إلى <strong>(${days} يوماً)</strong>؟`,
+                title: 'تعديل أيام الاشتراك',
+                message: `هل أنت متأكد من ${actionWord} لاشتراك الجهاز <strong>(${sub.device_code})</strong>؟<br>ستصبح المدة المتبقية: <strong>(${newRemainingDays} يوماً)</strong>`,
                 icon: 'fa-calendar-check',
                 type: 'info',
-                confirmText: 'حفظ وتطبيق المدة',
+                confirmText: 'حفظ وتطبيق التعديل',
                 cancelText: 'إلغاء',
             });
             if (!confirmed) return;
 
-            const now = new Date();
-            const newExpiry = new Date(now.getTime() + days * 24 * 60 * 60 * 1000);
             const expiryToken = formatDateToToken(newExpiry);
             const newLicenseKey = generateLicenseKey(sub.device_code, expiryToken);
+            const newStatus = newExpiry > now ? 'active' : 'expired';
 
             try {
                 const { error } = await sbClient
                     .from('app_subscriptions')
                     .update({
                         expires_at: newExpiry.toISOString(),
-                        plan_days: days,
+                        plan_days: newRemainingDays,
                         license_key: newLicenseKey,
-                        status: 'active',
+                        status: newStatus,
                         updated_at: now.toISOString()
                     })
                     .eq('id', subId);
 
                 if (error) throw error;
-                showToast(`تم تعيين مدة الاشتراك إلى (${days} يوماً)`);
+                showToast(`تم ${actionWord} بنجاح! المدة المتبقية: ${newRemainingDays} يوم`);
+                input.value = '';
                 fetchSubscriptions();
             } catch (err) {
-                showToast('فشل حفظ الأيام: ' + err.message, false);
+                showToast('فشل حفظ وتطبيق الأيام: ' + err.message, false);
             }
         }
 
