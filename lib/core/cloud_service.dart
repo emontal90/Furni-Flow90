@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
@@ -366,6 +367,40 @@ class CloudService {
       }
     } catch (_) {}
     return null;
+  }
+
+  static Timer? _realtimeSyncTimer;
+  static bool _isSyncing = false;
+
+  /// بدء حلقة المزامنة اللحظية المستمرة للاشتراكات في الخلفية
+  /// تقوم بالتحقق اللحظي مع السحابة دورياً لتطبيق الإيقاف، التشفير، التفعيل، أو تعديل الأيام فوراً
+  static void startRealtimeSyncLoop({Duration interval = const Duration(seconds: 4)}) {
+    _realtimeSyncTimer?.cancel();
+    triggerRealtimeSyncNow();
+    _realtimeSyncTimer = Timer.periodic(interval, (_) {
+      triggerRealtimeSyncNow();
+    });
+  }
+
+  /// إيقاف حلقة المزامنة اللحظية
+  static void stopRealtimeSyncLoop() {
+    _realtimeSyncTimer?.cancel();
+    _realtimeSyncTimer = null;
+  }
+
+  /// تنفيذ مزامنة فورية عاجلة مع السحابة
+  static Future<void> triggerRealtimeSyncNow() async {
+    if (_isSyncing) return;
+    _isSyncing = true;
+    try {
+      final code = await SecurityStorageService.getDeviceCode();
+      if (code.isNotEmpty) {
+        await checkAndSyncSubscriptionStatus(code);
+      }
+    } catch (_) {
+    } finally {
+      _isSyncing = false;
+    }
   }
 
   // -------------------------------------------------------------

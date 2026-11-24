@@ -9,7 +9,6 @@ import 'core/cloud_service.dart';
 import 'core/db_helper.dart';
 import 'core/license_service.dart';
 import 'core/platform_init.dart';
-import 'core/security_storage_service.dart';
 import 'screens/auth_screen.dart';
 import 'screens/main_nav_screen.dart';
 import 'screens/settings_hub_screen.dart';
@@ -21,10 +20,8 @@ void main() async {
   await AppSettingsService.initialize();
   await LicenseService.checkStatus();
 
-  // فحص وتحديث حالة الاشتراك التجاري سحابياً في الخلفية
-  SecurityStorageService.getDeviceCode().then((code) {
-    CloudService.checkAndSyncSubscriptionStatus(code);
-  });
+  // تشغيل حلقة المزامنة اللحظية المستمرة للاشتراكات سحابياً
+  CloudService.startRealtimeSyncLoop();
 
   final bool biometricEnabled = await AppSettingsService.isBiometricEnabled();
 

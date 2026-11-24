@@ -629,13 +629,9 @@ class _UpholstererScreenState extends State<UpholstererScreen>
       expectedComponentCount: catComps.length,
     );
 
-    int setsCount;
-    if (isReceive) {
-      setsCount = remBreak.completeSets;
-    } else {
-      setsCount = remBreak.completeSets > 0 ? remBreak.completeSets : 1;
-    }
-    final setsCtrl = TextEditingController(text: '$setsCount');
+    // عدد الأطقم والقطع الافتراضية عند فتح النافذة هو صفر بناءً على طلب المستخدم
+    int setsCount = 0;
+    final setsCtrl = TextEditingController(text: '0');
 
     final List<_PieceInputItem> pieceItems = workshopPieces.map((wp) {
       final pName = (wp['name'] ?? '').toString();
@@ -644,21 +640,10 @@ class _UpholstererScreenState extends State<UpholstererScreen>
       final recQ = CategoryStockHelper.parseInt(wp['received_qty']);
       final remQ = math.max(0, sentQ - recQ);
 
-      int initialQ;
-      if (isReceive) {
-        if (setsCount > 0) {
-          initialQ = setsCount * baseQ;
-        } else {
-          initialQ = remQ;
-        }
-      } else {
-        initialQ = setsCount * baseQ;
-      }
-
       return _PieceInputItem(
         name: pName,
         baseQty: baseQ,
-        initialQty: initialQ,
+        initialQty: 0,
         maxAllowed: isReceive ? (remQ > 0 ? remQ : -1) : -1,
       );
     }).toList();

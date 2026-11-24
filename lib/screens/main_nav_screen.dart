@@ -6,6 +6,7 @@ import '../core/app_notification.dart';
 import '../core/app_settings_service.dart';
 import '../core/app_theme.dart';
 import '../core/app_update_service.dart';
+import '../core/cloud_service.dart';
 import '../core/license_service.dart';
 import 'auth_screen.dart';
 import 'dashboard_screen.dart';
@@ -59,6 +60,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
     } else if (state == AppLifecycleState.resumed) {
       _checkResumeBiometricLock();
       _checkForAppUpdatesSilently();
+      CloudService.triggerRealtimeSyncNow();
     }
   }
 
