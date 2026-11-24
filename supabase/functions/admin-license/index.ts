@@ -30,6 +30,13 @@ function formatDateToToken(date: Date): string {
   return `${y}${m}${d}`
 }
 
+/** Aligns expiry timestamp to 23:59:59 local time (UTC+2 -> 21:59:59 UTC) to match LicenseService.validateKey. */
+function alignToEndOfDay(date: Date): Date {
+  const aligned = new Date(date.getTime())
+  aligned.setUTCHours(21, 59, 59, 0)
+  return aligned
+}
+
 async function generateLicenseKey(
   secret: string,
   deviceCode: string,
@@ -108,7 +115,7 @@ Deno.serve(async (req) => {
 
     if (action === 'activate') {
       const days = Math.max(1, Number(body.days ?? sub.plan_days ?? 30))
-      const expiryDate = new Date(now.getTime() + days * 24 * 60 * 60 * 1000)
+      const expiryDate = alignToEndOfDay(new Date(now.getTime() + days * 24 * 60 * 60 * 1000))
       const expiryToken = formatDateToToken(expiryDate)
       const licenseKey = await generateLicenseKey(signingSecret, sub.device_code, expiryToken)
 
@@ -144,7 +151,7 @@ Deno.serve(async (req) => {
       let baseDate = sub.expires_at ? new Date(sub.expires_at) : new Date()
       if (delta > 0 && baseDate < now) baseDate = now
 
-      const newExpiry = new Date(baseDate.getTime() + delta * 24 * 60 * 60 * 1000)
+      const newExpiry = alignToEndOfDay(new Date(baseDate.getTime() + delta * 24 * 60 * 60 * 1000))
       const newDays = Math.max(1, Number(sub.plan_days ?? 30) + delta)
       const isExpired = newExpiry < now
       const expiryToken = formatDateToToken(newExpiry)

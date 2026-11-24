@@ -1301,6 +1301,511 @@ class _UpholstererScreenState extends State<UpholstererScreen>
 
   static const String uphNamePlaceholder = '__UPH__';
 
+  /// نافذة تعديل الرصيد الموجود لدى المنجد مباشرة (يقبل التعديل حتى لو كان الرصيد 0)
+  void _openEditBalanceModal({required Map<String, dynamic> category}) {
+    final String catName = (category['name'] ?? '').toString().trim();
+    final batch = _findMergedBatchForCategory(category);
+    final workshopPieces = _buildCategoryWorkshopPieces(category, batch);
+    final catComps = CategoryStockHelper.getMainComponents(category['components_json']);
+
+    final remBreak = CategoryStockHelper.computeBreakdownFromPieces(
+      workshopPieces,
+      qtyKey: 'sent_qty',
+      subtractKey: 'received_qty',
+      expectedComponentCount: catComps.length,
+    );
+
+    final existingUph = batch != null ? (batch['upholsterer_name'] ?? '').toString().trim() : '';
+    final uphNameCtrl = TextEditingController(
+      text: existingUph.isNotEmpty ? existingUph : 'ورشة التنجيد',
+    );
+
+    int setsCount = remBreak.completeSets;
+    final setsCtrl = TextEditingController(text: '$setsCount');
+
+    final List<_PieceInputItem> pieceItems = workshopPieces.map((wp) {
+      final pName = (wp['name'] ?? '').toString();
+      final baseQ = math.max(1, CategoryStockHelper.parseInt(wp['base_qty'], fallback: 1));
+      final sentQ = CategoryStockHelper.parseInt(wp['sent_qty']);
+      final recQ = CategoryStockHelper.parseInt(wp['received_qty']);
+      final remQ = math.max(0, sentQ - recQ);
+
+      return _PieceInputItem(
+        name: pName,
+        baseQty: baseQ,
+        initialQty: remQ,
+        maxAllowed: -1,
+      );
+    }).toList();
+
+    bool isSaving = false;
+
+    void applySetsToPieces(int newSets, StateSetter setModalState) {
+      final safeSets = math.max(0, newSets);
+      setModalState(() {
+        setsCount = safeSets;
+        setsCtrl.text = '$safeSets';
+        for (final p in pieceItems) {
+          p.qtyCtrl.text = '${safeSets * p.baseQty}';
+        }
+      });
+    }
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: AppTheme.cardBg(context),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
+      ),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setModalState) {
+          final livePieces = pieceItems
+              .map((p) => {
+                    'name': p.name,
+                    'base_qty': p.baseQty,
+                    'qty': math.max(0, int.tryParse(p.qtyCtrl.text.trim()) ?? 0),
+                  })
+              .toList();
+          final liveBreak = CategoryStockHelper.computeBreakdownFromPieces(
+            livePieces,
+            qtyKey: 'qty',
+            expectedComponentCount: catComps.length,
+          );
+          final liveText = liveBreak.totalPieces > 0
+              ? CategoryStockHelper.formatSetsAndIndividual(
+                  liveBreak.completeSets,
+                  liveBreak.individualPieces,
+                )
+              : 'لا يوجد رصيد لديه';
+
+          return Padding(
+            padding: EdgeInsets.only(
+              bottom: MediaQuery.of(ctx).viewInsets.bottom + 16,
+              left: 16,
+              right: 16,
+              top: 14,
+            ),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Center(
+                    child: Container(
+                      width: 44,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: AppTheme.borderColor(ctx),
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: AppTheme.primaryNavy.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Icon(
+                          Icons.edit_rounded,
+                          color: AppTheme.accentOnSurface(ctx),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'تعديل الرصيد الموجود لدى المنجد',
+                              style: TextStyle(fontSize: 16.5, fontWeight: FontWeight.bold),
+                            ),
+                            Text(
+                              'الصنف: $catName (يقبل التعديل حتى الصفر)',
+                              style: TextStyle(fontSize: 12, color: AppTheme.textMuted(ctx)),
+                            ),
+                          ],
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.close),
+                        onPressed: () => Navigator.pop(ctx),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: uphNameCtrl,
+                    decoration: InputDecoration(
+                      labelText: 'اسم المنجد / الورشة',
+                      prefixIcon: const Icon(Icons.person_outline_rounded),
+                      isDense: true,
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+
+                  // تعديل سريع بعدد الأطقم الكاملة
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: AppTheme.subtleBg(ctx),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: AppTheme.borderColor(ctx)),
+                    ),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            'عدد الأطقم الكاملة:',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 13.5,
+                              color: AppTheme.textPrimary(ctx),
+                            ),
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.remove_circle_outline, color: Colors.red),
+                          onPressed: setsCount > 0 ? () => applySetsToPieces(setsCount - 1, setModalState) : null,
+                        ),
+                        SizedBox(
+                          width: 52,
+                          child: TextField(
+                            controller: setsCtrl,
+                            keyboardType: TextInputType.number,
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                            decoration: const InputDecoration(
+                              isDense: true,
+                              contentPadding: EdgeInsets.symmetric(horizontal: 4, vertical: 7),
+                            ),
+                            onChanged: (v) {
+                              final parsed = math.max(0, int.tryParse(v.trim()) ?? 0);
+                              setModalState(() {
+                                setsCount = parsed;
+                                for (final p in pieceItems) {
+                                  p.qtyCtrl.text = '${parsed * p.baseQty}';
+                                }
+                              });
+                            },
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.add_circle_outline, color: Colors.green),
+                          onPressed: () => applySetsToPieces(setsCount + 1, setModalState),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+
+                  // قائمة القطع لتعديل رصيد كل قطعة بدقة (حتى الصفر)
+                  ...pieceItems.map((piece) {
+                    final curQ = math.max(0, int.tryParse(piece.qtyCtrl.text.trim()) ?? 0);
+                    return Container(
+                      margin: const EdgeInsets.only(bottom: 8),
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: AppTheme.cardBg(ctx),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: AppTheme.borderColor(ctx)),
+                      ),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  piece.name,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 14,
+                                    color: AppTheme.textPrimary(ctx),
+                                  ),
+                                ),
+                                Text(
+                                  'النسبة: ${piece.baseQty} في الطقم الواحد',
+                                  style: TextStyle(fontSize: 11, color: AppTheme.textMuted(ctx)),
+                                ),
+                              ],
+                            ),
+                          ),
+                          Material(
+                            color: Colors.red.withValues(alpha: 0.14),
+                            borderRadius: BorderRadius.circular(8),
+                            child: InkWell(
+                              borderRadius: BorderRadius.circular(8),
+                              onTap: curQ > 0
+                                  ? () => setModalState(() => piece.qtyCtrl.text = '${curQ - 1}')
+                                  : null,
+                              child: const Padding(
+                                padding: EdgeInsets.all(7.0),
+                                child: Icon(Icons.remove, color: Colors.red, size: 20),
+                              ),
+                            ),
+                          ),
+                          Container(
+                            width: 48,
+                            margin: const EdgeInsets.symmetric(horizontal: 4),
+                            child: TextField(
+                              controller: piece.qtyCtrl,
+                              keyboardType: TextInputType.number,
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 15.5,
+                                color: AppTheme.textPrimary(ctx),
+                              ),
+                              decoration: const InputDecoration(
+                                isDense: true,
+                                contentPadding: EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+                              ),
+                              onChanged: (_) => setModalState(() {}),
+                            ),
+                          ),
+                          Material(
+                            color: Colors.green.withValues(alpha: 0.16),
+                            borderRadius: BorderRadius.circular(8),
+                            child: InkWell(
+                              borderRadius: BorderRadius.circular(8),
+                              onTap: () => setModalState(() => piece.qtyCtrl.text = '${curQ + 1}'),
+                              child: const Padding(
+                                padding: EdgeInsets.all(7.0),
+                                child: Icon(Icons.add, color: Colors.green, size: 20),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  }),
+
+                  const SizedBox(height: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+                    decoration: BoxDecoration(
+                      color: liveBreak.totalPieces > 0
+                          ? AppTheme.warningBg(ctx)
+                          : AppTheme.successBg(ctx),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                        color: liveBreak.totalPieces > 0
+                            ? AppTheme.warningBorder(ctx)
+                            : AppTheme.successBorder(ctx),
+                      ),
+                    ),
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text(
+                        'الرصيد الجديد لدى المنجد: $liveText (${liveBreak.totalPieces} قطعة)',
+                        maxLines: 1,
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13,
+                          color: liveBreak.totalPieces > 0
+                              ? AppTheme.warningFg(ctx)
+                              : AppTheme.successFg(ctx),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppTheme.primaryNavy,
+                      foregroundColor: AppTheme.brightGold,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    onPressed: isSaving
+                        ? null
+                        : () async {
+                            setModalState(() => isSaving = true);
+                            final uphName = uphNameCtrl.text.trim().isNotEmpty
+                                ? uphNameCtrl.text.trim()
+                                : 'ورشة التنجيد';
+                            final targetPieces = pieceItems
+                                .map((p) => {
+                                      'name': p.name,
+                                      'qty': math.max(0, int.tryParse(p.qtyCtrl.text.trim()) ?? 0),
+                                      'base_qty': p.baseQty,
+                                    })
+                                .toList();
+                            final ok = await _executeEditBalance(
+                              category: category,
+                              existingBatch: batch,
+                              upholstererName: uphName,
+                              targetRemainingPieces: targetPieces,
+                            );
+                            if (ok && ctx.mounted) {
+                              Navigator.pop(ctx);
+                            } else if (ctx.mounted) {
+                              setModalState(() => isSaving = false);
+                            }
+                          },
+                    icon: isSaving
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                          )
+                        : const Icon(Icons.check_circle_rounded),
+                    label: const Text(
+                      'تنفيذ تعديل الرصيد',
+                      style: TextStyle(fontSize: 15.5, fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    ).whenComplete(() {
+      uphNameCtrl.dispose();
+      setsCtrl.dispose();
+      for (final p in pieceItems) {
+        p.dispose();
+      }
+    });
+  }
+
+  /// تنفيذ تعديل الرصيد لدى المنجد مباشرة (يقبل الصفر لتصفير الرصيد)
+  Future<bool> _executeEditBalance({
+    required Map<String, dynamic> category,
+    required Map<String, dynamic>? existingBatch,
+    required String upholstererName,
+    required List<Map<String, dynamic>> targetRemainingPieces,
+  }) async {
+    try {
+      final db = await DBHelper.instance.database;
+      final int catId = CategoryStockHelper.parseInt(category['id']);
+      final String catName = (category['name'] ?? '').toString().trim();
+      final today = UpholstererStatementHelper.formatIsoDate(DateTime.now());
+      final catComps = CategoryStockHelper.getMainComponents(category['components_json']);
+
+      final mergedPieces = _buildCategoryWorkshopPieces(category, existingBatch);
+      for (final tp in targetRemainingPieces) {
+        final pName = (tp['name'] ?? '').toString().trim();
+        final newRem = math.max(0, CategoryStockHelper.parseInt(tp['qty']));
+        final bQty = math.max(1, CategoryStockHelper.parseInt(tp['base_qty'], fallback: 1));
+        final idx = mergedPieces.indexWhere((m) => (m['name'] ?? '').toString().trim() == pName);
+        if (idx != -1) {
+          final curRec = CategoryStockHelper.parseInt(mergedPieces[idx]['received_qty']);
+          mergedPieces[idx]['sent_qty'] = curRec + newRem;
+          mergedPieces[idx]['sent_date'] = today;
+        } else if (newRem > 0) {
+          mergedPieces.add({
+            'name': pName,
+            'base_qty': bQty,
+            'sent_qty': newRem,
+            'received_qty': 0,
+            'sent_date': today,
+            'received_date': null,
+          });
+        }
+      }
+
+      int totalSent = 0;
+      int totalRec = 0;
+      for (final mp in mergedPieces) {
+        totalSent += CategoryStockHelper.parseInt(mp['sent_qty']);
+        totalRec += CategoryStockHelper.parseInt(mp['received_qty']);
+      }
+      final mainMerged = CategoryStockHelper.getMainComponents(mergedPieces);
+      final totalSentSets = CategoryStockHelper.computeBreakdownFromPieces(
+        mainMerged,
+        qtyKey: 'sent_qty',
+        expectedComponentCount: catComps.length,
+      ).completeSets;
+      final totalRecSets = CategoryStockHelper.computeBreakdownFromPieces(
+        mainMerged,
+        qtyKey: 'received_qty',
+        expectedComponentCount: catComps.length,
+      ).completeSets;
+
+      final remBreak = CategoryStockHelper.computeBreakdownFromPieces(
+        mergedPieces,
+        qtyKey: 'sent_qty',
+        subtractKey: 'received_qty',
+        expectedComponentCount: catComps.length,
+      );
+
+      await db.transaction((txn) async {
+        if (existingBatch != null) {
+          final int batchId = existingBatch['id'] as int;
+          await txn.update(
+            'upholsterer_batches',
+            {
+              'upholsterer_name': upholstererName,
+              'total_sent': totalSent,
+              'received_qty': totalRec,
+              'sets_sent': totalSentSets,
+              'sets_received': totalRecSets,
+              'sent_date': today,
+              'pieces_json': jsonEncode(mergedPieces),
+            },
+            where: 'id = ?',
+            whereArgs: [batchId],
+          );
+        } else if (remBreak.totalPieces > 0) {
+          await txn.insert('upholsterer_batches', {
+            'upholsterer_name': upholstererName,
+            'category_id': catId,
+            'category_name': catName,
+            'piece_name': targetRemainingPieces.isNotEmpty
+                ? targetRemainingPieces.first['name']
+                : catName,
+            'total_sent': totalSent,
+            'received_qty': totalRec,
+            'sent_date': today,
+            'received_date': null,
+            'sets_sent': totalSentSets,
+            'sets_received': totalRecSets,
+            'pieces_json': jsonEncode(mergedPieces),
+          });
+        }
+      });
+
+      final remSummary = remBreak.totalPieces > 0
+          ? CategoryStockHelper.formatSetsAndIndividual(
+              remBreak.completeSets,
+              remBreak.individualPieces,
+            )
+          : '0 (تم تصفير الرصيد)';
+      await StockMovementHelper.logMovement(
+        categoryId: catId,
+        categoryName: catName,
+        movementType: 'upholsterer_balance_adjust',
+        qtyChange: 0,
+        stockAfter: CategoryStockHelper.parseInt(category['stock_qty']),
+        notes: 'تعديل رصيد لدى المنجد ($upholstererName) لصنف "$catName" إلى: $remSummary',
+      );
+
+      AppEvents.instance.notifyAll();
+      if (mounted) {
+        AppNotification.showSuccess(
+          context,
+          'تم تعديل رصيد "$catName" لدى المنجد إلى $remSummary بنجاح',
+        );
+      }
+      return true;
+    } catch (e) {
+      if (mounted) {
+        AppNotification.showError(context, 'تعذر تعديل الرصيد: $e');
+      }
+      return false;
+    }
+  }
+
   /// تنفيذ عملية الاستلام من المنجد مع إضافة القطع فوراً لمخزن المعرض وتسجيلها في كشف الحساب والتفاصيل
   Future<bool> _executeReceive({
     required Map<String, dynamic> category,
@@ -1680,7 +2185,21 @@ class _UpholstererScreenState extends State<UpholstererScreen>
                               ),
                               const SizedBox(width: 6),
 
-                              // 4. زر "تفاصيل" خارجي يعرض سجل حركات هذا التاب بالتاريخ
+                              // 4. زر القلم لتعديل الرصيد الموجود لدى المنجد (في تاب تسليم) + زر "تفاصيل"
+                              if (!isReceiveTab) ...[
+                                IconButton(
+                                  padding: EdgeInsets.zero,
+                                  constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                                  tooltip: 'تعديل الرصيد الموجود لدى المنجد',
+                                  icon: Icon(
+                                    Icons.edit_rounded,
+                                    color: AppTheme.accentOnSurface(context),
+                                    size: 20,
+                                  ),
+                                  onPressed: () => _openEditBalanceModal(category: cat),
+                                ),
+                                const SizedBox(width: 2),
+                              ],
                               OutlinedButton(
                                 style: OutlinedButton.styleFrom(
                                   foregroundColor: AppTheme.accentOnSurface(context),
