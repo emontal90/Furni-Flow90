@@ -962,23 +962,13 @@
             });
             if (!confirmed) return;
 
-            const expiryToken = formatDateToToken(newExpiry);
-            const newLicenseKey = generateLicenseKey(sub.device_code, expiryToken);
-            const newStatus = newExpiry > now ? 'active' : 'expired';
-
             try {
-                const { error } = await sbClient
-                    .from('app_subscriptions')
-                    .update({
-                        expires_at: newExpiry.toISOString(),
-                        plan_days: newRemainingDays,
-                        license_key: newLicenseKey,
-                        status: newStatus,
-                        updated_at: now.toISOString()
-                    })
-                    .eq('id', subId);
+                const { data, error } = await sbClient.functions.invoke('admin-license', {
+                    body: { action: 'adjust_days', sub_id: subId, delta }
+                });
 
                 if (error) throw error;
+                if (!data || !data.success) throw new Error((data && data.error) || 'فشل تعديل الأيام من الخادم');
                 showToast(`تم ${actionWord} بنجاح! المدة المتبقية: ${newRemainingDays} يوم`);
                 input.value = '';
                 fetchSubscriptions();

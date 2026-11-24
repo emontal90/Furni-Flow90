@@ -256,26 +256,23 @@ class CloudService {
   }) async {
     try {
       final baseUrl = await getSupabaseUrl();
-      final headers = await _getHeaders(isPost: true);
+      final headers = await _getHeaders();
 
       final payload = {
-        'device_code': deviceCode.trim().toUpperCase(),
-        'sender_phone': senderPhone.trim(),
-        'reference_no': referenceNo.trim(),
-        'payment_method': paymentMethod == PaymentMethod.vodafoneCash
+        'p_device_code': deviceCode.trim().toUpperCase(),
+        'p_sender_phone': senderPhone.trim(),
+        'p_reference_no': referenceNo.trim(),
+        'p_payment_method': paymentMethod == PaymentMethod.vodafoneCash
             ? 'vodafone_cash'
             : 'instapay',
-        'plan_type': plan.id,
-        'plan_days': plan.days,
-        'amount': plan.price,
-        'status': 'pending',
-        'created_at': DateTime.now().toUtc().toIso8601String(),
-        'updated_at': DateTime.now().toUtc().toIso8601String(),
+        'p_plan_type': plan.id,
+        'p_plan_days': plan.days,
+        'p_amount': plan.price,
       };
 
       final response = await http
           .post(
-            Uri.parse('$baseUrl/rest/v1/app_subscriptions'),
+            Uri.parse('$baseUrl/rest/v1/rpc/submit_subscription_request'),
             headers: headers,
             body: jsonEncode(payload),
           )

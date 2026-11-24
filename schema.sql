@@ -111,6 +111,10 @@ DROP POLICY IF EXISTS "Allow anon upload to furniflow-backups" ON storage.object
 DROP POLICY IF EXISTS "Allow anon update in furniflow-backups" ON storage.objects;
 DROP POLICY IF EXISTS "Allow anon select from furniflow-backups" ON storage.objects;
 DROP POLICY IF EXISTS "Allow anon delete from furniflow-backups" ON storage.objects;
+DROP POLICY IF EXISTS "Allow anon upload to own device folder" ON storage.objects;
+DROP POLICY IF EXISTS "Allow anon update own device folder" ON storage.objects;
+DROP POLICY IF EXISTS "Allow anon select own device file" ON storage.objects;
+DROP POLICY IF EXISTS "Allow anon delete own device file" ON storage.objects;
 DROP POLICY IF EXISTS "Admin full storage access" ON storage.objects;
 
 -- السماح للعميل برفع نسخته داخل مجلد معرف جهازه فقط، ومنع الاستعراض المفتوح
@@ -204,6 +208,47 @@ $$;
 
 REVOKE ALL ON FUNCTION public.get_device_subscription(TEXT) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.get_device_subscription(TEXT) TO anon, authenticated;
+
+CREATE OR REPLACE FUNCTION public.submit_subscription_request(
+    p_device_code TEXT,
+    p_sender_phone TEXT,
+    p_reference_no TEXT,
+    p_payment_method TEXT,
+    p_plan_type TEXT,
+    p_plan_days INTEGER,
+    p_amount NUMERIC
+)
+RETURNS SETOF public.app_subscriptions
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_row public.app_subscriptions;
+BEGIN
+    INSERT INTO public.app_subscriptions (
+        device_code, sender_phone, reference_no, payment_method,
+        plan_type, plan_days, amount, status
+    ) VALUES (
+        UPPER(TRIM(p_device_code)),
+        TRIM(p_sender_phone),
+        TRIM(p_reference_no),
+        p_payment_method,
+        p_plan_type,
+        GREATEST(1, p_plan_days),
+        GREATEST(0, p_amount),
+        'pending'
+    )
+    RETURNING * INTO v_row;
+
+    RETURN NEXT v_row;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.submit_subscription_request(TEXT, TEXT, TEXT, TEXT, TEXT, INTEGER, NUMERIC) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.submit_subscription_request(TEXT, TEXT, TEXT, TEXT, TEXT, INTEGER, NUMERIC) TO anon, authenticated;
+
+
 
 CREATE OR REPLACE FUNCTION public.list_device_backups(p_device_code TEXT)
 RETURNS SETOF public.cloud_backups
